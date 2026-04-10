@@ -12,7 +12,12 @@ export function ParamRow({ param, enabled, weightAxes, weightValues, onToggle, o
           <Text style={styles.label}>{param.label}</Text>
           {param.blurb ? <Text style={styles.blurb}>{param.blurb}</Text> : null}
         </View>
-        <Toggle active={enabled} onToggle={onToggle} />
+        <Toggle
+          active={enabled}
+          onToggle={onToggle}
+          accessibilityLabel={`${param.label} toggle`}
+          accessibilityHint={enabled ? "Double tap to disable this parameter" : "Double tap to enable this parameter"}
+        />
       </View>
       {enabled ? (
         <View style={styles.weightSection}>

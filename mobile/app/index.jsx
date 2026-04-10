@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -41,13 +41,8 @@ import {
 } from "../lib/scoreHours";
 import { colors } from "../constants/colors";
 import { fontFamilies } from "../constants/fonts";
-
-function formatLocationCoordinates(location) {
-  const lat = Number(location?.latitude);
-  const lon = Number(location?.longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "";
-  return `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
-}
+import { formatTimeKey12Hour } from "../lib/time";
+import { formatLocationCoordinates } from "../lib/locationFormat";
 
 function nowImpactSummary(score) {
   if (!Number.isFinite(score)) return "Current outside impact is unavailable.";
@@ -71,6 +66,20 @@ export default function Home() {
   const [flags, setFlags] = useState(() => ({ ...DEFAULT_FLAGS }));
   const [weights, setWeights] = useState(() => defaultParamWeights());
   const [location, setLocation] = useState(() => ({ ...DEFAULT_LOCATION }));
+  const loadRequestIdRef = useRef(0);
+  const preferencesSignatureRef = useRef(null);
+
+  const preferencesSignature = useCallback((f, w, loc) => JSON.stringify({ f, w, loc }), []);
+
+  const invalidateReadoutState = useCallback(() => {
+    setError(null);
+    setRollup(null);
+    setAllScored(null);
+    setCurrentHour(null);
+    setSelectedHourTime(null);
+    setShowAllHours(false);
+    setShowDayBreakdown(false);
+  }, []);
 
   const loadPreferences = useCallback(async () => {
     const [f, w, loc] = await Promise.all([
@@ -85,13 +94,34 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    loadPreferences();
-  }, [loadPreferences]);
+    let active = true;
+    (async () => {
+      const { f, w, loc } = await loadPreferences();
+      if (!active) return;
+      preferencesSignatureRef.current = preferencesSignature(f, w, loc);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [loadPreferences, preferencesSignature]);
 
   useFocusEffect(
     useCallback(() => {
-      loadPreferences();
-    }, [loadPreferences])
+      let active = true;
+      (async () => {
+        const { f, w, loc } = await loadPreferences();
+        if (!active) return;
+        const nextSignature = preferencesSignature(f, w, loc);
+        const previousSignature = preferencesSignatureRef.current;
+        if (previousSignature && previousSignature !== nextSignature) {
+          invalidateReadoutState();
+        }
+        preferencesSignatureRef.current = nextSignature;
+      })();
+      return () => {
+        active = false;
+      };
+    }, [invalidateReadoutState, loadPreferences, preferencesSignature])
   );
 
   const readoutCache = useMemo(() => {
@@ -106,25 +136,27 @@ export default function Home() {
   }, [allScored, flags]);
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     const { f, w, loc } = await loadPreferences();
+    if (requestId !== loadRequestIdRef.current) return;
     setLoading(true);
-    setError(null);
-    setRollup(null);
-    setAllScored(null);
-    setCurrentHour(null);
-    setSelectedHourTime(null);
-    setShowAllHours(false);
-    setShowDayBreakdown(false);
+    invalidateReadoutState();
     try {
       if (!hasAnyParamEnabled(f)) {
+        if (requestId !== loadRequestIdRef.current) return;
         setError("Turn on at least one parameter in Settings.");
         return;
       }
       const { forecast, air, timezone } = await getWeather(f, loc);
+      if (requestId !== loadRequestIdRef.current) return;
       const hours = normalizeHourly(forecast, air, f);
       const todayPrefix = todayDatePrefixInTimeZone(timezone);
       const todayHours = filterHoursByDatePrefix(hours, todayPrefix);
       const scored = scoreHours(todayHours, f, w);
+      if (!scored.length) {
+        setError("No usable hourly readings are available for today at this location.");
+        return;
+      }
       setAllScored(scored);
       setRollup(rollupHours(scored));
       const nowPrefix = currentHourPrefixInTimeZone(timezone);
@@ -132,11 +164,13 @@ export default function Home() {
       setCurrentHour(current);
       setSelectedHourTime(current?.time ?? scored[0]?.time ?? null);
     } catch (e) {
+      if (requestId !== loadRequestIdRef.current) return;
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
+      if (requestId !== loadRequestIdRef.current) return;
       setLoading(false);
     }
-  }, [loadPreferences]);
+  }, [invalidateReadoutState, loadPreferences]);
 
   const canLoad = hasAnyParamEnabled(flags);
   const selectedHour = useMemo(() => {
@@ -156,7 +190,13 @@ export default function Home() {
       <Animated.View entering={FadeInDown.duration(400).delay(0)} style={styles.titleSection}>
         <View style={styles.titleRow}>
           <Text style={styles.title}>Outside impact readout</Text>
-          <Pressable onPress={() => router.push("/settings")} style={styles.settingsBtn} hitSlop={12}>
+          <Pressable
+            onPress={() => router.push("/settings")}
+            style={styles.settingsBtn}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Open settings"
+          >
             <Settings2 size={16} color={colors.mutedForeground} strokeWidth={1.75} />
             <Text style={styles.settingsText}>Settings</Text>
           </Pressable>
@@ -172,7 +212,11 @@ export default function Home() {
       </Animated.View>
 
       <Animated.View entering={FadeInDown.duration(400).delay(50)}>
-        <Button onPress={load} disabled={loading || !canLoad}>
+        <Button
+          onPress={load}
+          disabled={loading || !canLoad}
+          accessibilityLabel={loading ? "Loading today's impact" : "Load today's impact"}
+        >
           {loading ? "Loading\u2026" : "Load today"}
         </Button>
       </Animated.View>
@@ -183,7 +227,13 @@ export default function Home() {
             Nothing is included yet. Choose what outside means for you in Settings,
             set how strongly each factor counts, then load today's hours.
           </Text>
-          <Button variant="outline" size="sm" onPress={() => router.push("/settings")} style={{ marginTop: 12 }}>
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={() => router.push("/settings")}
+            style={{ marginTop: 12 }}
+            accessibilityLabel="Open settings"
+          >
             Open Settings
           </Button>
         </Animated.View>
@@ -217,7 +267,12 @@ export default function Home() {
 
       {rollup && (
         <Animated.View entering={FadeInDown.duration(500).delay(200)}>
-          <Pressable onPress={() => setShowDayBreakdown((v) => !v)} style={styles.breakdownToggle}>
+          <Pressable
+            onPress={() => setShowDayBreakdown((v) => !v)}
+            style={styles.breakdownToggle}
+            accessibilityRole="button"
+            accessibilityLabel={showDayBreakdown ? "Hide day breakdown" : "Show day breakdown"}
+          >
             <Text style={styles.breakdownToggleText}>
               {showDayBreakdown ? "Hide day breakdown" : "Why today looks this way"}
             </Text>
@@ -237,7 +292,12 @@ export default function Home() {
             selectedTime={selectedHour?.time}
             onSelect={(time) => setSelectedHourTime(time)}
           />
-          <Pressable onPress={() => setShowAllHours((v) => !v)} style={styles.hourToggleBtn}>
+          <Pressable
+            onPress={() => setShowAllHours((v) => !v)}
+            style={styles.hourToggleBtn}
+            accessibilityRole="button"
+            accessibilityLabel={showAllHours ? "Show selected hour only" : "Show all hours"}
+          >
             <Text style={styles.hourToggleText}>
               {showAllHours ? "Show selected hour only" : "Show all hours"}
             </Text>
@@ -322,7 +382,7 @@ function BreakdownSection({ rollup }) {
           <Text style={breakdownStyles.sectionTitle}>HARDEST OUTSIDE HOUR</Text>
           {rollup.worst?.time ? (
             <Text style={breakdownStyles.worstTime}>
-              {rollup.worst.time.slice(11, 16)}
+              {formatTimeKey12Hour(rollup.worst.time)}
               <Text style={breakdownStyles.worstMeta}>
                 {" "}\u00B7 impact{" "}
                 <Text style={breakdownStyles.worstScore}>{rollup.worst.score}</Text>
@@ -410,7 +470,7 @@ const styles = StyleSheet.create({
   },
   emptyNotice: {
     borderLeftWidth: 2,
-    borderLeftColor: "rgba(156, 68, 34, 0.4)",
+    borderLeftColor: colors.borderWarm,
     paddingLeft: 14,
   },
   emptyNoticeText: {
@@ -471,7 +531,7 @@ const styles = StyleSheet.create({
 
 const breakdownStyles = StyleSheet.create({
   card: {
-    backgroundColor: "rgba(253, 252, 249, 0.82)",
+    backgroundColor: colors.surfaceCard,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,

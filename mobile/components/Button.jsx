@@ -2,7 +2,16 @@ import { Pressable, Text, StyleSheet } from "react-native";
 import { colors } from "../constants/colors";
 import { fontFamilies } from "../constants/fonts";
 
-export function Button({ onPress, disabled, children, variant = "default", size = "default", style }) {
+export function Button({
+  onPress,
+  disabled,
+  children,
+  variant = "default",
+  size = "default",
+  style,
+  accessibilityLabel,
+  accessibilityHint,
+}) {
   const isPrimary = variant === "default";
   const isOutline = variant === "outline";
   const isSmall = size === "sm";
@@ -11,6 +20,9 @@ export function Button({ onPress, disabled, children, variant = "default", size 
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       style={({ pressed }) => [
         styles.base,
         isSmall && styles.small,
@@ -52,7 +64,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   primaryPressed: {
-    backgroundColor: "#7A3518",
+    backgroundColor: colors.primaryPressed,
   },
   outline: {
     backgroundColor: "transparent",

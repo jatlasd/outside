@@ -1,25 +1,11 @@
 import { View, Text, StyleSheet } from "react-native";
 import { colors, scoreBandColors } from "../constants/colors";
 import { fontFamilies } from "../constants/fonts";
-
-function impactBand(score) {
-  if (!Number.isFinite(score)) return "unknown";
-  if (score <= 25) return "low";
-  if (score <= 50) return "moderate";
-  if (score <= 75) return "high";
-  return "severe";
-}
-
-function impactBandLabel(band) {
-  if (band === "low") return "Low";
-  if (band === "moderate") return "Moderate";
-  if (band === "high") return "High";
-  if (band === "severe") return "Severe";
-  return "Unknown";
-}
+import { bandForScore, scoreBandLabel } from "../lib/scoreBand";
+import { formatTimeKey12Hour } from "../lib/time";
 
 export function ImpactCard({ title, score, subtitle, reasons, children }) {
-  const band = impactBand(score);
+  const band = bandForScore(score);
   const bandColor = scoreBandColors[band] || {};
 
   return (
@@ -33,7 +19,7 @@ export function ImpactCard({ title, score, subtitle, reasons, children }) {
           <View style={styles.info}>
             <View style={[styles.pill, { backgroundColor: bandColor.pill || colors.muted }]}>
               <Text style={[styles.pillText, { color: bandColor.pillText || colors.mutedForeground }]}>
-                {impactBandLabel(band)} outside effect
+                {scoreBandLabel(band)} outside effect
               </Text>
             </View>
             {subtitle ? (
@@ -42,7 +28,7 @@ export function ImpactCard({ title, score, subtitle, reasons, children }) {
             {reasons?.length > 0 ? (
               <View style={styles.reasonList}>
                 {reasons.slice(0, 3).map((r, i) => (
-                  <View key={i} style={styles.reasonRow}>
+                  <View key={`${r}-${i}`} style={styles.reasonRow}>
                     <View style={styles.dot} />
                     <Text style={styles.reasonText}>{r}</Text>
                   </View>
@@ -64,7 +50,7 @@ export function ImpactCard({ title, score, subtitle, reasons, children }) {
 
 export function DayImpactCard({ rollup }) {
   if (!rollup) return null;
-  const band = impactBand(rollup.dayImpactScore);
+  const band = bandForScore(rollup.dayImpactScore);
   const bandColor = scoreBandColors[band] || {};
 
   return (
@@ -77,14 +63,14 @@ export function DayImpactCard({ rollup }) {
           <Text style={styles.dayScore}>{rollup.dayImpactScore}</Text>
           <View style={[styles.pill, { backgroundColor: bandColor.pill || colors.muted }]}>
             <Text style={[styles.pillText, { color: bandColor.pillText || colors.mutedForeground }]}>
-              {impactBandLabel(band)}
+              {scoreBandLabel(band)}
             </Text>
           </View>
         </View>
         <Text style={styles.subtitle}>{rollup.impactSummary}</Text>
         <Text style={styles.blend}>
           Blend: mean {rollup.meanScore} + peak {rollup.worstScore}
-          {rollup.worst?.time ? ` (${rollup.worst.time.slice(11, 16)})` : ""}.
+          {rollup.worst?.time ? ` (${formatTimeKey12Hour(rollup.worst.time)})` : ""}.
         </Text>
       </View>
     </View>
@@ -93,7 +79,7 @@ export function DayImpactCard({ rollup }) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "rgba(253, 252, 249, 0.82)",
+    backgroundColor: colors.surfaceCard,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,

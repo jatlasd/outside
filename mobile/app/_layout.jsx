@@ -6,6 +6,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { colors } from "../constants/colors";
+import { fontFamilies } from "../constants/fonts";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -36,7 +37,7 @@ export default function RootLayout() {
         screenOptions={{
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.foreground,
-          headerTitleStyle: { fontFamily: "Fraunces_600SemiBold", fontSize: 17 },
+          headerTitleStyle: { fontFamily: fontFamilies.heading, fontSize: 17 },
           headerShadowVisible: false,
           contentStyle: { backgroundColor: colors.background },
           animation: "fade",
@@ -44,7 +45,7 @@ export default function RootLayout() {
       >
         <Stack.Screen
           name="index"
-          options={{ title: "Field Log", headerShown: false }}
+          options={{ title: "Outside impact readout", headerShown: false }}
         />
         <Stack.Screen
           name="settings"

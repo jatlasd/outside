@@ -2,17 +2,13 @@ import { useState, useCallback, useEffect } from "react";
 import { View, Text, Pressable, StyleSheet, LayoutAnimation, Platform, UIManager } from "react-native";
 import { colors, scoreBandColors, offenderHighlight } from "../constants/colors";
 import { fontFamilies } from "../constants/fonts";
+import { formatTimeKey12Hour } from "../lib/time";
+import { bandForScore } from "../lib/scoreBand";
+
+const DETAILS_OFFSET = 93;
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-function bandForScore(score) {
-  if (!Number.isFinite(score)) return null;
-  if (score <= 25) return "low";
-  if (score <= 50) return "moderate";
-  if (score <= 75) return "high";
-  return "severe";
 }
 
 function hourSummaryLine(reasons) {
@@ -47,19 +43,40 @@ export function HourRow({ row, readoutEntries, isEven, defaultExpanded = false, 
 
   return (
     <View style={[styles.container, isEven && styles.evenRow, bandColor && { backgroundColor: bandColor.bg }]}>
-      <Pressable onPress={toggle} style={styles.summary}>
-        <View style={[styles.borderStrip, bandColor && { backgroundColor: bandColor.border }]} />
-        <Text style={styles.time}>{row.time.slice(11, 16)}</Text>
-        <Text style={styles.score}>{row.score}</Text>
-        <Text style={styles.reasons} numberOfLines={2}>
-          {hourSummaryLine(row.reasons)}
-        </Text>
-      </Pressable>
+      {hideSummaryTap ? (
+        <View style={styles.summary}>
+          <View style={[styles.borderStrip, bandColor && { backgroundColor: bandColor.border }]} />
+          <Text style={styles.time}>{formatTimeKey12Hour(row.time)}</Text>
+          <Text style={styles.score}>{row.score}</Text>
+          <Text style={styles.reasons} numberOfLines={2}>
+            {hourSummaryLine(row.reasons)}
+          </Text>
+        </View>
+      ) : (
+        <Pressable
+          onPress={toggle}
+          style={styles.summary}
+          accessibilityRole="button"
+          accessibilityLabel={`Toggle details for ${formatTimeKey12Hour(row.time)}`}
+        >
+          <View style={[styles.borderStrip, bandColor && { backgroundColor: bandColor.border }]} />
+          <Text style={styles.time}>{formatTimeKey12Hour(row.time)}</Text>
+          <Text style={styles.score}>{row.score}</Text>
+          <Text style={styles.reasons} numberOfLines={2}>
+            {hourSummaryLine(row.reasons)}
+          </Text>
+        </Pressable>
+      )}
       {!expanded && row.reasons?.length > 1 ? (
         <Text style={styles.moreReason}>+{row.reasons.length - 1} more signals</Text>
       ) : null}
       {!hideSummaryTap ? (
-        <Pressable onPress={toggle} style={styles.expandCta}>
+        <Pressable
+          onPress={toggle}
+          style={styles.expandCta}
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? "Hide hour details" : "Show hour details"}
+        >
           <Text style={styles.expandText}>{expanded ? "Hide details" : "Show details"}</Text>
         </Pressable>
       ) : null}
@@ -90,6 +107,8 @@ export function HourRow({ row, readoutEntries, isEven, defaultExpanded = false, 
             <Pressable
               onPress={() => setShowAllMetrics((v) => !v)}
               style={styles.moreMetricsBtn}
+              accessibilityRole="button"
+              accessibilityLabel={showAllMetrics ? "Show key metrics only" : "Show all metrics"}
             >
               <Text style={styles.moreMetricsText}>
                 {showAllMetrics
@@ -129,7 +148,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.data,
     fontSize: 14,
     color: colors.foreground,
-    width: 52,
+    width: 72,
     marginLeft: 8,
   },
   score: {
@@ -148,7 +167,7 @@ const styles = StyleSheet.create({
   },
   moreReason: {
     marginTop: -6,
-    marginLeft: 73,
+    marginLeft: DETAILS_OFFSET,
     marginBottom: 6,
     fontFamily: fontFamilies.sans,
     fontSize: 11,
@@ -156,7 +175,7 @@ const styles = StyleSheet.create({
   },
   expandCta: {
     marginTop: -3,
-    marginLeft: 73,
+    marginLeft: DETAILS_OFFSET,
     marginBottom: 10,
   },
   expandText: {
@@ -169,8 +188,8 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     paddingTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(221, 216, 206, 0.8)",
-    backgroundColor: "rgba(253, 252, 249, 0.4)",
+    borderTopColor: colors.borderEmphasis,
+    backgroundColor: colors.surfaceCardMuted,
   },
   entryRow: {
     flexDirection: "row",

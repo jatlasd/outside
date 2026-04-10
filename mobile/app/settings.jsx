@@ -36,6 +36,7 @@ import {
 import { resolveZipToLocation } from "../lib/geocodeZip";
 import { colors } from "../constants/colors";
 import { fontFamilies } from "../constants/fonts";
+import { formatLocationCoordinates } from "../lib/locationFormat";
 
 const GROUP_ORDER = ["weather", "air", "allergens"];
 
@@ -50,13 +51,6 @@ const GROUP_HINTS = {
   air: "Turning on any air factor adds an extra air-quality data request.",
   allergens: "Turning on pollen factors adds an extra air-quality data request.",
 };
-
-function formatLocationCoordinates(location) {
-  const lat = Number(location?.latitude);
-  const lon = Number(location?.longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "";
-  return `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
-}
 
 export default function Settings() {
   const insets = useSafeAreaInsets();
@@ -86,7 +80,7 @@ export default function Settings() {
   const updateFlag = useCallback(async (id, checked) => {
     setFlags((prev) => {
       const next = { ...prev, [id]: checked };
-      saveParamFlags(next);
+      void saveParamFlags(next);
       return next;
     });
   }, []);
@@ -100,7 +94,7 @@ export default function Settings() {
       const current = typeof prev[id] === "object" && prev[id] ? prev[id] : fallback;
       const nextEntry = { ...fallback, ...current, [axisKey]: Math.max(0, num) };
       const next = { ...prev, [id]: nextEntry };
-      saveParamWeights(next);
+      void saveParamWeights(next);
       return next;
     });
   }, []);
@@ -159,7 +153,7 @@ export default function Settings() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
         style={styles.scroll}
@@ -201,9 +195,15 @@ export default function Settings() {
                 returnKeyType="done"
                 onSubmitEditing={applyZipLocation}
                 autoComplete="postal-code"
+                accessibilityLabel="ZIP code input"
               />
-              <Button size="sm" onPress={applyZipLocation} disabled={findingZip}>
-                {findingZip ? "\u2026" : "Apply"}
+              <Button
+                size="sm"
+                onPress={applyZipLocation}
+                disabled={findingZip}
+                accessibilityLabel={findingZip ? "Applying ZIP code" : "Apply ZIP code"}
+              >
+                {findingZip ? "Applying\u2026" : "Apply"}
               </Button>
             </View>
           </View>
@@ -212,6 +212,8 @@ export default function Settings() {
             onPress={applyCurrentLocation}
             disabled={detectingLocation}
             style={styles.geoButton}
+            accessibilityRole="button"
+            accessibilityLabel={detectingLocation ? "Detecting current location" : "Use device location"}
           >
             <Navigation size={12} color={colors.mutedForeground} strokeWidth={1.75} />
             <Text style={[styles.geoText, detectingLocation && { opacity: 0.5 }]}>
@@ -291,7 +293,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   locationCard: {
-    backgroundColor: "rgba(253, 252, 249, 0.82)",
+    backgroundColor: colors.surfaceCard,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,
@@ -319,7 +321,7 @@ const styles = StyleSheet.create({
     color: colors.foreground,
   },
   currentLocation: {
-    backgroundColor: "rgba(245, 243, 238, 0.6)",
+    backgroundColor: colors.surfaceInset,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: colors.border,
@@ -381,8 +383,8 @@ const styles = StyleSheet.create({
   noticeBox: {
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "rgba(156, 68, 34, 0.2)",
-    backgroundColor: "rgba(156, 68, 34, 0.05)",
+    borderColor: colors.noticeBorder,
+    backgroundColor: colors.noticeBackground,
     padding: 10,
   },
   noticeText: {
@@ -393,8 +395,8 @@ const styles = StyleSheet.create({
   errorNotice: {
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "rgba(160, 42, 24, 0.2)",
-    backgroundColor: "rgba(160, 42, 24, 0.05)",
+    borderColor: colors.errorBorder,
+    backgroundColor: colors.errorBackground,
     padding: 10,
   },
   errorNoticeText: {
@@ -403,7 +405,7 @@ const styles = StyleSheet.create({
     color: colors.destructive,
   },
   groupCard: {
-    backgroundColor: "rgba(253, 252, 249, 0.82)",
+    backgroundColor: colors.surfaceCard,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,

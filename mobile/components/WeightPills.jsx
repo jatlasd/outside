@@ -6,8 +6,6 @@ import { fontFamilies } from "../constants/fonts";
 export function WeightPills({ value, onChange }) {
   const displayLabel = (label) => {
     if (label === "Ignore") return "Off";
-    if (label === "Standard") return "Std";
-    if (label === "Severe") return "Max";
     return label;
   };
 
@@ -20,6 +18,9 @@ export function WeightPills({ value, onChange }) {
             key={opt.label}
             onPress={() => onChange(opt.value)}
             style={[styles.pill, selected && styles.pillSelected]}
+            accessibilityRole="button"
+            accessibilityLabel={`Set sensitivity to ${displayLabel(opt.label)}`}
+            accessibilityState={{ selected }}
           >
             <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
               {displayLabel(opt.label)}

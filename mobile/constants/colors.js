@@ -15,6 +15,16 @@ export const colors = {
   border: "#DDD8CE",
   input: "#DDD8CE",
   ring: "#9C4422",
+  primaryPressed: "#7A3518",
+  surfaceCard: "rgba(253, 252, 249, 0.82)",
+  surfaceCardMuted: "rgba(253, 252, 249, 0.4)",
+  surfaceInset: "rgba(245, 243, 238, 0.6)",
+  borderEmphasis: "rgba(221, 216, 206, 0.8)",
+  borderWarm: "rgba(156, 68, 34, 0.4)",
+  noticeBorder: "rgba(156, 68, 34, 0.2)",
+  noticeBackground: "rgba(156, 68, 34, 0.05)",
+  errorBorder: "rgba(160, 42, 24, 0.2)",
+  errorBackground: "rgba(160, 42, 24, 0.05)",
 };
 
 export const scoreBandColors = {

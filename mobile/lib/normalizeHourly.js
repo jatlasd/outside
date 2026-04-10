@@ -71,25 +71,45 @@ export function normalizeHourly(forecast, air, flags) {
 export function todayDatePrefixInTimeZone(ianaTimeZone) {
   const tz = ianaTimeZone || "UTC";
   try {
-    return new Date().toLocaleDateString("en-CA", { timeZone: tz });
+    return datePrefixForZone(new Date(), tz);
   } catch {
-    return new Date().toLocaleDateString("en-CA", { timeZone: "UTC" });
+    return datePrefixForZone(new Date(), "UTC");
   }
+}
+
+function dateHourPartsForZone(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = formatter.formatToParts(date);
+  const read = (type) => parts.find((p) => p.type === type)?.value ?? "";
+  return {
+    year: read("year"),
+    month: read("month"),
+    day: read("day"),
+    hour: read("hour"),
+  };
+}
+
+function datePrefixForZone(date, timeZone) {
+  const { year, month, day } = dateHourPartsForZone(date, timeZone);
+  return `${year}-${month}-${day}`;
 }
 
 export function currentHourPrefixInTimeZone(ianaTimeZone) {
   const tz = ianaTimeZone || "UTC";
   const d = new Date();
   try {
-    const ymd = d.toLocaleDateString("en-CA", { timeZone: tz });
-    let [hour] = d.toLocaleTimeString("en-GB", { timeZone: tz }).split(":");
-    if (hour === "24") hour = "00";
-    return `${ymd}T${hour}:00`;
+    const { year, month, day, hour } = dateHourPartsForZone(d, tz);
+    return `${year}-${month}-${day}T${hour}:00`;
   } catch {
-    const ymd = d.toLocaleDateString("en-CA", { timeZone: "UTC" });
-    let [hour] = d.toLocaleTimeString("en-GB", { timeZone: "UTC" }).split(":");
-    if (hour === "24") hour = "00";
-    return `${ymd}T${hour}:00`;
+    const { year, month, day, hour } = dateHourPartsForZone(d, "UTC");
+    return `${year}-${month}-${day}T${hour}:00`;
   }
 }
 

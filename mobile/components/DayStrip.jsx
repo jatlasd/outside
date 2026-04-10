@@ -1,8 +1,9 @@
 import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { colors } from "../constants/colors";
 import { fontFamilies } from "../constants/fonts";
+import { formatTimeKey12Hour } from "../lib/time";
 
-const CELL_WIDTH = 46;
+const CELL_WIDTH = 74;
 const BAR_HEIGHT = 40;
 
 export function DayStrip({ scored, selectedTime, onSelect }) {
@@ -24,12 +25,15 @@ export function DayStrip({ scored, selectedTime, onSelect }) {
               key={r.time}
               onPress={() => onSelect?.(r.time)}
               style={[styles.cell, selected && styles.cellSelected]}
+              accessibilityRole="button"
+              accessibilityLabel={`Select ${formatTimeKey12Hour(r.time)}`}
+              accessibilityState={{ selected }}
             >
               <View style={styles.barTrack}>
                 <View style={[styles.barFill, { opacity, height: BAR_HEIGHT }]} />
               </View>
               <Text style={[styles.cellTime, selected && styles.cellTimeSelected]} numberOfLines={1}>
-                {r.time.slice(11, 16)}
+                {formatTimeKey12Hour(r.time)}
               </Text>
             </Pressable>
           );

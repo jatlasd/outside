@@ -2,7 +2,7 @@ import { Pressable, View, StyleSheet } from "react-native";
 import Animated, { useAnimatedStyle, withTiming } from "react-native-reanimated";
 import { colors } from "../constants/colors";
 
-export function Toggle({ active, onToggle }) {
+export function Toggle({ active, onToggle, accessibilityLabel, accessibilityHint }) {
   const trackStyle = useAnimatedStyle(() => ({
     backgroundColor: withTiming(active ? colors.primary : colors.muted, { duration: 200 }),
     borderColor: withTiming(active ? "rgba(156, 68, 34, 0.6)" : colors.border, { duration: 200 }),
@@ -17,6 +17,8 @@ export function Toggle({ active, onToggle }) {
       onPress={onToggle}
       accessibilityRole="switch"
       accessibilityState={{ checked: active }}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       hitSlop={8}
     >
       <Animated.View style={[styles.track, trackStyle]}>

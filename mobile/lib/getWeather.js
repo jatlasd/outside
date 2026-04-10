@@ -30,6 +30,9 @@ export async function getWeather(flags, location = DEFAULT_LOCATION) {
     );
     if (!response.ok) throw new Error("Weather request failed");
     forecast = await response.json();
+    if (forecast?.error) {
+      throw new Error(forecast.reason || "Weather request failed");
+    }
   }
 
   if (needsAirQualityFetch(flags) && airVars) {
@@ -38,6 +41,9 @@ export async function getWeather(flags, location = DEFAULT_LOCATION) {
     );
     if (!response.ok) throw new Error("Air quality request failed");
     air = await response.json();
+    if (air?.error) {
+      throw new Error(air.reason || "Air quality request failed");
+    }
   }
 
   const timezone = forecast?.timezone ?? air?.timezone ?? "UTC";
