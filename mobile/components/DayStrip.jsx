@@ -1,65 +1,88 @@
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { colors } from "../constants/colors";
 import { fontFamilies } from "../constants/fonts";
 
+const CELL_WIDTH = 46;
+const BAR_HEIGHT = 40;
+
 export function DayStrip({ scored, selectedTime, onSelect }) {
   if (!scored?.length) return null;
-  const first = scored[0]?.time?.slice(11, 16) ?? "";
-  const mid = scored[Math.floor(scored.length / 2)]?.time?.slice(11, 16) ?? "";
-  const last = scored[scored.length - 1]?.time?.slice(11, 16) ?? "";
 
   return (
-    <View>
-      <View style={styles.container}>
-        {scored.map((r) => (
-          <Pressable
-            key={r.time}
-            onPress={() => onSelect?.(r.time)}
-            style={[
-              styles.bar,
-              { opacity: 0.15 + (r.score / 100) * 0.85 },
-              selectedTime === r.time && styles.barSelected,
-            ]}
-          />
-        ))}
-      </View>
-      <View style={styles.labelRow}>
-        <Text style={styles.timeLabel}>{first}</Text>
-        <Text style={styles.timeLabel}>{mid}</Text>
-        <Text style={styles.timeLabel}>{last}</Text>
-      </View>
+    <View style={styles.wrap}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {scored.map((r) => {
+          const selected = selectedTime === r.time;
+          const opacity = 0.15 + (r.score / 100) * 0.85;
+          return (
+            <Pressable
+              key={r.time}
+              onPress={() => onSelect?.(r.time)}
+              style={[styles.cell, selected && styles.cellSelected]}
+            >
+              <View style={styles.barTrack}>
+                <View style={[styles.barFill, { opacity, height: BAR_HEIGHT }]} />
+              </View>
+              <Text style={[styles.cellTime, selected && styles.cellTimeSelected]} numberOfLines={1}>
+                {r.time.slice(11, 16)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    height: 16,
-    gap: 2,
+  wrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    paddingVertical: 2,
+    marginHorizontal: -4,
   },
-  bar: {
-    flex: 1,
-    backgroundColor: colors.primary,
-    minWidth: 1,
-    borderRadius: 2,
-  },
-  barSelected: {
-    borderWidth: 1,
-    borderColor: colors.foreground,
-  },
-  labelRow: {
-    marginTop: 6,
+  scrollContent: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "flex-end",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    gap: 6,
   },
-  timeLabel: {
+  cell: {
+    width: CELL_WIDTH,
+    alignItems: "center",
+    borderRadius: 8,
+    paddingBottom: 6,
+    paddingTop: 4,
+  },
+  cellSelected: {
+    borderWidth: 1.5,
+    borderColor: colors.foreground,
+    backgroundColor: "rgba(232, 228, 216, 0.35)",
+  },
+  barTrack: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    marginBottom: 4,
+  },
+  barFill: {
+    width: Math.max(24, CELL_WIDTH - 8),
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
+  cellTime: {
     fontFamily: fontFamilies.data,
-    fontSize: 10,
+    fontSize: 11,
     color: colors.mutedForeground,
+  },
+  cellTimeSelected: {
+    color: colors.foreground,
+    fontFamily: fontFamilies.sans,
   },
 });

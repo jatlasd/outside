@@ -66,13 +66,15 @@ export function weightAxesForParam(id) {
 export const PARAM_REFERENCE = {
   temperature: {
     blurb: "Air temperature for this hour.",
-    referenceRange: "Stable conditions: less than 3 C change vs prior hour.",
-    flaggedWhen: "Scoring rises when hour-over-hour change reaches 3 C or 5 C.",
+    referenceRange: "Stable conditions: less than about 5 °F (3 °C) change vs prior hour.",
+    flaggedWhen:
+      "Scoring rises when hour-over-hour change reaches about 5 °F (3 °C) or 9 °F (5 °C), or when air is very hot or freezing (see level rules).",
   },
   apparentTemperature: {
     blurb: "How temperature feels on the body.",
-    referenceRange: "Most comfortable near 10 C to 30 C.",
-    flaggedWhen: "Scoring rises at large shifts (3 C or 5 C) and at extreme values (>= 32 C or <= -12 C).",
+    referenceRange: "Typical comfort band about 50–86 °F (10–30 °C).",
+    flaggedWhen:
+      "Scoring rises on hour-over-hour jumps of about 5 °F (3 °C) or 9 °F (5 °C), and at extremes (≥ about 90 °F / 32 °C or ≤ about 10 °F / −12 °C). Mild levels damp trend-only heat penalties.",
   },
   humidity: {
     blurb: "Relative humidity in percent.",
@@ -81,8 +83,8 @@ export const PARAM_REFERENCE = {
   },
   dewpoint: {
     blurb: "Moisture level felt as mugginess.",
-    referenceRange: "Lower comfort load: below 20 C dew point.",
-    flaggedWhen: "Scoring rises at >= 20 C and more at >= 24 C.",
+    referenceRange: "Lower mugginess: dew point below about 68 °F (20 °C).",
+    flaggedWhen: "Scoring rises at ≥ about 68 °F (20 °C) and more at ≥ about 75 °F (24 °C).",
   },
   precipitation: {
     blurb: "Rain amount expected in this hour.",
@@ -111,13 +113,13 @@ export const PARAM_REFERENCE = {
   },
   wind: {
     blurb: "Sustained wind speed.",
-    referenceRange: "Lower wind load: below 40 km/h.",
-    flaggedWhen: "Scoring rises at >= 40 km/h and more at >= 55 km/h.",
+    referenceRange: "Lower wind load: below about 25 mph (40 km/h).",
+    flaggedWhen: "Scoring rises at ≥ about 25 mph (40 km/h) and more at ≥ about 34 mph (55 km/h).",
   },
   windGusts: {
     blurb: "Peak gust speed variability.",
-    referenceRange: "Steadier gust profile: less than 12 km/h change vs prior hour.",
-    flaggedWhen: "Scoring rises at >= 12 km/h and more at >= 20 km/h hour-over-hour gust change.",
+    referenceRange: "Steadier gust profile: less than about 7 mph (12 km/h) change vs prior hour.",
+    flaggedWhen: "Scoring rises at ≥ about 7 mph (12 km/h) and more at ≥ about 12 mph (20 km/h) hour-over-hour gust change.",
   },
   visibility: {
     blurb: "How far you can see through the air.",

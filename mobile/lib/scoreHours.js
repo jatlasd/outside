@@ -97,18 +97,96 @@ export function scoreHours(hours, flags, weights) {
     const breakdown = {};
     const wt = (id, axis = "base") => weightFor(weights, id, axis);
 
-    if (flags.temperature) {
+    let tempHotDelta = null;
+    let tempColdDelta = null;
+    let appHotDelta = null;
+    let appColdDelta = null;
+
+    if (flags.temperature && i > 0) {
       const cur = hour.temperatureC;
-      if (i > 0) {
-        const prev = hours[i - 1].temperatureC;
-        if (prev != null && cur != null) {
-          const delta = cur - prev;
-          if (delta >= 5) { const add = 32 * wt("temperature", "hot"); score += add; bump(breakdown, "temperature", add); reasons.push("Sharp warming vs prior hour"); }
-          else if (delta >= 3) { const add = 16 * wt("temperature", "hot"); score += add; bump(breakdown, "temperature", add); reasons.push("Noticeable warming trend"); }
-          else if (delta <= -5) { const add = 32 * wt("temperature", "cold"); score += add; bump(breakdown, "temperature", add); reasons.push("Sharp cooling vs prior hour"); }
-          else if (delta <= -3) { const add = 16 * wt("temperature", "cold"); score += add; bump(breakdown, "temperature", add); reasons.push("Noticeable cooling trend"); }
+      const prev = hours[i - 1].temperatureC;
+      if (prev != null && cur != null) {
+        const delta = cur - prev;
+        if (delta >= 5) {
+          tempHotDelta = {
+            add: 32 * wt("temperature", "hot"),
+            reason: "Sharp warming vs prior hour",
+            id: "temperature",
+          };
+        } else if (delta >= 3) {
+          tempHotDelta = {
+            add: 16 * wt("temperature", "hot"),
+            reason: "Noticeable warming trend",
+            id: "temperature",
+          };
+        } else if (delta <= -5) {
+          tempColdDelta = {
+            add: 32 * wt("temperature", "cold"),
+            reason: "Sharp cooling vs prior hour",
+            id: "temperature",
+          };
+        } else if (delta <= -3) {
+          tempColdDelta = {
+            add: 16 * wt("temperature", "cold"),
+            reason: "Noticeable cooling trend",
+            id: "temperature",
+          };
         }
       }
+    }
+
+    if (flags.apparentTemperature && i > 0) {
+      const ap = hour.apparentTempC;
+      const prev = hours[i - 1].apparentTempC;
+      if (prev != null && ap != null) {
+        const mildBand = ap >= 5 && ap <= 28;
+        const damp = mildBand ? 0.45 : 1;
+        const delta = ap - prev;
+        if (delta >= 5) {
+          appHotDelta = {
+            add: 18 * wt("apparentTemperature", "hot") * damp,
+            reason: "Large increase in feels-like temperature",
+            id: "apparentTemperature",
+          };
+        } else if (delta >= 3) {
+          appHotDelta = {
+            add: 9 * wt("apparentTemperature", "hot") * damp,
+            reason: "Feels-like temperature trending hotter",
+            id: "apparentTemperature",
+          };
+        } else if (delta <= -5) {
+          appColdDelta = {
+            add: 18 * wt("apparentTemperature", "cold") * damp,
+            reason: "Large drop in feels-like temperature",
+            id: "apparentTemperature",
+          };
+        } else if (delta <= -3) {
+          appColdDelta = {
+            add: 9 * wt("apparentTemperature", "cold") * damp,
+            reason: "Feels-like temperature trending colder",
+            id: "apparentTemperature",
+          };
+        }
+      }
+    }
+
+    const hotDeltas = [tempHotDelta, appHotDelta].filter(Boolean);
+    if (hotDeltas.length) {
+      const win = hotDeltas.reduce((a, b) => (a.add >= b.add ? a : b));
+      score += win.add;
+      bump(breakdown, win.id, win.add);
+      reasons.push(win.reason);
+    }
+    const coldDeltas = [tempColdDelta, appColdDelta].filter(Boolean);
+    if (coldDeltas.length) {
+      const win = coldDeltas.reduce((a, b) => (a.add >= b.add ? a : b));
+      score += win.add;
+      bump(breakdown, win.id, win.add);
+      reasons.push(win.reason);
+    }
+
+    if (flags.temperature) {
+      const cur = hour.temperatureC;
       if (cur != null) {
         if (cur >= 30) { const add = 14 * wt("temperature", "hot"); score += add; bump(breakdown, "temperature", add); reasons.push("Very hot air temperature"); }
         else if (cur <= 0) { const add = 8 * wt("temperature", "cold"); score += add; bump(breakdown, "temperature", add); reasons.push("Cold air temperature"); }
@@ -118,16 +196,6 @@ export function scoreHours(hours, flags, weights) {
     if (flags.apparentTemperature) {
       const ap = hour.apparentTempC;
       if (ap != null) {
-        if (i > 0) {
-          const prev = hours[i - 1].apparentTempC;
-          if (prev != null) {
-            const delta = ap - prev;
-            if (delta >= 5) { const add = 18 * wt("apparentTemperature", "hot"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Large increase in feels-like temperature"); }
-            else if (delta >= 3) { const add = 9 * wt("apparentTemperature", "hot"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Feels-like temperature trending hotter"); }
-            else if (delta <= -5) { const add = 18 * wt("apparentTemperature", "cold"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Large drop in feels-like temperature"); }
-            else if (delta <= -3) { const add = 9 * wt("apparentTemperature", "cold"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Feels-like temperature trending colder"); }
-          }
-        }
         if (ap >= 32) { const add = 12 * wt("apparentTemperature", "hot"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Very high apparent heat"); }
         else if (ap <= -12) { const add = 12 * wt("apparentTemperature", "cold"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Very cold feels-like temperature"); }
       }

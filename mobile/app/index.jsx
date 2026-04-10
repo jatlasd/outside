@@ -230,7 +230,7 @@ export default function Home() {
         <Animated.View entering={FadeInDown.duration(500).delay(300)}>
           <Text style={styles.logTitle}>Hourly timeline</Text>
           <Text style={styles.logDescription}>
-            Pick an hour first. Darker bars mean stronger outside pressure.
+            Pick an hour first. Scroll sideways; each column is one hour. Darker fills mean stronger outside pressure. Values show in °F; trend thresholds use °C steps internally, then your sensitivity weights apply.
           </Text>
           <DayStrip
             scored={allScored}
