@@ -1,0 +1,55 @@
+export const colors = {
+  background: "#F5F3EE",
+  foreground: "#1E2432",
+  card: "#FDFCF9",
+  cardForeground: "#1E2432",
+  primary: "#9C4422",
+  primaryForeground: "#FDF8F0",
+  secondary: "#E0EDDF",
+  secondaryForeground: "#283040",
+  muted: "#E8E4D8",
+  mutedForeground: "#656B7B",
+  accent: "#EDE6D4",
+  accentForeground: "#262E3E",
+  destructive: "#A02A18",
+  border: "#DDD8CE",
+  input: "#DDD8CE",
+  ring: "#9C4422",
+};
+
+export const scoreBandColors = {
+  low: {
+    bg: "rgba(182, 216, 170, 0.35)",
+    text: "#2E5C2A",
+    border: "#4D8C48",
+    pill: "rgba(182, 216, 170, 0.55)",
+    pillText: "#2E5C2A",
+  },
+  moderate: {
+    bg: "rgba(228, 213, 160, 0.38)",
+    text: "#6B6020",
+    border: "#9A8C30",
+    pill: "rgba(228, 213, 160, 0.58)",
+    pillText: "#6B6020",
+  },
+  high: {
+    bg: "rgba(228, 186, 130, 0.4)",
+    text: "#7A5520",
+    border: "#A87830",
+    pill: "rgba(228, 186, 130, 0.6)",
+    pillText: "#7A5520",
+  },
+  severe: {
+    bg: "rgba(222, 150, 120, 0.38)",
+    text: "#6E2C18",
+    border: "#9C3C20",
+    pill: "rgba(222, 150, 120, 0.58)",
+    pillText: "#6E2C18",
+  },
+};
+
+export const offenderHighlight = {
+  bg: "rgba(222, 150, 120, 0.22)",
+  border: "#9C3C20",
+  text: "#7A3018",
+};
