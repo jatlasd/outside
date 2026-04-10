@@ -26,6 +26,43 @@ export const PARAMS = [
   { id: "nitrogenDioxide", label: "Nitrogen dioxide", group: "air", source: "air", vars: ["nitrogen_dioxide"] },
 ];
 
+export const DEFAULT_WEIGHT_AXES = [
+  { key: "base", label: "Sensitivity" },
+];
+
+export const PARAM_WEIGHT_AXES = {
+  temperature: [
+    { key: "hot", label: "Heat sensitivity" },
+    { key: "cold", label: "Cold sensitivity" },
+  ],
+  apparentTemperature: [
+    { key: "hot", label: "Feels-like heat sensitivity" },
+    { key: "cold", label: "Feels-like cold sensitivity" },
+  ],
+  humidity: [
+    { key: "high", label: "Humidity sensitivity" },
+    { key: "low", label: "Dry air sensitivity" },
+  ],
+  precipitation: [
+    { key: "high", label: "Rain sensitivity" },
+  ],
+  precipitationProbability: [
+    { key: "high", label: "Rain chance sensitivity" },
+  ],
+  cloudCover: [
+    { key: "low", label: "Bright sky sensitivity" },
+    { key: "high", label: "Overcast sensitivity" },
+  ],
+  wind: [
+    { key: "high", label: "Strong wind sensitivity" },
+    { key: "low", label: "Still-air sensitivity" },
+  ],
+};
+
+export function weightAxesForParam(id) {
+  return PARAM_WEIGHT_AXES[id] ?? DEFAULT_WEIGHT_AXES;
+}
+
 export const PARAM_REFERENCE = {
   temperature: {
     blurb: "Air temperature for this hour.",

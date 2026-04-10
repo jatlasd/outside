@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { DEFAULT_FLAGS, PARAMS } from "./paramConfig";
+import { DEFAULT_FLAGS, PARAMS, weightAxesForParam } from "./paramConfig";
 
 export const PARAM_STORAGE_KEY = "weather-included-params";
 export const WEIGHT_STORAGE_KEY = "weather-param-weights";
@@ -13,7 +13,10 @@ export const DEFAULT_LOCATION = {
   zip: "",
 };
 
-const DEFAULT_WEIGHTS = Object.fromEntries(PARAMS.map((p) => [p.id, 1]));
+function defaultWeightEntryForParam(id) {
+  const axes = weightAxesForParam(id);
+  return Object.fromEntries(axes.map((axis) => [axis.key, 1]));
+}
 
 export const WEIGHT_LEVEL_OPTIONS = [
   { value: 0, label: "Ignore" },
@@ -24,30 +27,59 @@ export const WEIGHT_LEVEL_OPTIONS = [
 ];
 
 export function defaultParamWeights() {
-  return { ...DEFAULT_WEIGHTS };
+  return Object.fromEntries(PARAMS.map((p) => [p.id, defaultWeightEntryForParam(p.id)]));
+}
+
+function normalizeParamWeightEntry(id, input) {
+  const axes = weightAxesForParam(id);
+  const next = defaultWeightEntryForParam(id);
+  if (typeof input === "number" && Number.isFinite(input) && input >= 0) {
+    const value = Math.max(0, input);
+    for (const axis of axes) next[axis.key] = value;
+    return next;
+  }
+  if (typeof input !== "object" || !input) return next;
+  const asObject = input;
+  for (const axis of axes) {
+    const raw = asObject[axis.key];
+    if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+      next[axis.key] = Math.max(0, raw);
+      continue;
+    }
+    if (axis.key !== "base") {
+      const baseRaw = asObject.base;
+      if (typeof baseRaw === "number" && Number.isFinite(baseRaw) && baseRaw >= 0) {
+        next[axis.key] = Math.max(0, baseRaw);
+      }
+    }
+  }
+  return next;
 }
 
 export async function loadParamWeights() {
   try {
     const raw = await AsyncStorage.getItem(WEIGHT_STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_WEIGHTS };
+    if (!raw) return defaultParamWeights();
     const parsed = JSON.parse(raw);
-    if (typeof parsed !== "object" || !parsed) return { ...DEFAULT_WEIGHTS };
-    const next = { ...DEFAULT_WEIGHTS };
+    if (typeof parsed !== "object" || !parsed) return defaultParamWeights();
+    const next = defaultParamWeights();
     for (const p of PARAMS) {
-      const v = parsed[p.id];
-      if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
-        next[p.id] = v;
-      }
+      next[p.id] = normalizeParamWeightEntry(p.id, parsed[p.id]);
     }
     return next;
   } catch {
-    return { ...DEFAULT_WEIGHTS };
+    return defaultParamWeights();
   }
 }
 
 export async function saveParamWeights(weights) {
-  await AsyncStorage.setItem(WEIGHT_STORAGE_KEY, JSON.stringify(weights));
+  const next = defaultParamWeights();
+  if (typeof weights === "object" && weights) {
+    for (const p of PARAMS) {
+      next[p.id] = normalizeParamWeightEntry(p.id, weights[p.id]);
+    }
+  }
+  await AsyncStorage.setItem(WEIGHT_STORAGE_KEY, JSON.stringify(next));
 }
 
 export async function loadParamFlags() {

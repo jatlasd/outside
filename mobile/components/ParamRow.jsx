@@ -4,7 +4,7 @@ import { WeightPills } from "./WeightPills";
 import { colors } from "../constants/colors";
 import { fontFamilies } from "../constants/fonts";
 
-export function ParamRow({ param, enabled, weight, onToggle, onWeightChange }) {
+export function ParamRow({ param, enabled, weightAxes, weightValues, onToggle, onWeightChange }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -16,8 +16,12 @@ export function ParamRow({ param, enabled, weight, onToggle, onWeightChange }) {
       </View>
       {enabled ? (
         <View style={styles.weightSection}>
-          <Text style={styles.weightLabel}>How strongly this should count</Text>
-          <WeightPills value={weight} onChange={onWeightChange} />
+          {weightAxes.map((axis) => (
+            <View key={axis.key} style={styles.axisRow}>
+              <Text style={styles.weightLabel}>{axis.label}</Text>
+              <WeightPills value={weightValues?.[axis.key] ?? 1} onChange={(v) => onWeightChange(axis.key, v)} />
+            </View>
+          ))}
         </View>
       ) : (
         <Text style={styles.offHint}>Turn this on to tune severity.</Text>
@@ -56,6 +60,10 @@ const styles = StyleSheet.create({
   },
   weightSection: {
     marginTop: 8,
+    gap: 8,
+  },
+  axisRow: {
+    gap: 6,
   },
   weightLabel: {
     fontFamily: fontFamilies.sans,

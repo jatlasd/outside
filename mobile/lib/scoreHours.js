@@ -22,11 +22,16 @@ function impactSummaryForBand(band) {
   return "Outside impact is unavailable.";
 }
 
-function weightFor(weights, id) {
+function weightFor(weights, id, axis = "base") {
   if (!weights) return 1;
-  const v = weights[id];
-  if (v == null || !Number.isFinite(v)) return 1;
-  return Math.max(0, v);
+  const entry = weights[id];
+  if (typeof entry === "number" && Number.isFinite(entry)) return Math.max(0, entry);
+  if (typeof entry !== "object" || !entry) return 1;
+  const raw = entry[axis];
+  if (Number.isFinite(raw)) return Math.max(0, raw);
+  const base = entry.base;
+  if (Number.isFinite(base)) return Math.max(0, base);
+  return 1;
 }
 
 function bump(breakdown, id, delta) {
@@ -90,42 +95,51 @@ export function scoreHours(hours, flags, weights) {
     let score = 0;
     const reasons = [];
     const breakdown = {};
-    const wt = (id) => weightFor(weights, id);
+    const wt = (id, axis = "base") => weightFor(weights, id, axis);
 
-    if (flags.temperature && wt("temperature") > 0 && i > 0) {
-      const w = wt("temperature");
-      const prev = hours[i - 1].temperatureC;
+    if (flags.temperature) {
       const cur = hour.temperatureC;
-      if (prev != null && cur != null) {
-        const delta = Math.abs(cur - prev);
-        if (delta >= 5) { const add = 32 * w; score += add; bump(breakdown, "temperature", add); reasons.push("Sharp temperature change vs prior hour"); }
-        else if (delta >= 3) { const add = 16 * w; score += add; bump(breakdown, "temperature", add); reasons.push("Notable temperature shift"); }
+      if (i > 0) {
+        const prev = hours[i - 1].temperatureC;
+        if (prev != null && cur != null) {
+          const delta = cur - prev;
+          if (delta >= 5) { const add = 32 * wt("temperature", "hot"); score += add; bump(breakdown, "temperature", add); reasons.push("Sharp warming vs prior hour"); }
+          else if (delta >= 3) { const add = 16 * wt("temperature", "hot"); score += add; bump(breakdown, "temperature", add); reasons.push("Noticeable warming trend"); }
+          else if (delta <= -5) { const add = 32 * wt("temperature", "cold"); score += add; bump(breakdown, "temperature", add); reasons.push("Sharp cooling vs prior hour"); }
+          else if (delta <= -3) { const add = 16 * wt("temperature", "cold"); score += add; bump(breakdown, "temperature", add); reasons.push("Noticeable cooling trend"); }
+        }
+      }
+      if (cur != null) {
+        if (cur >= 30) { const add = 14 * wt("temperature", "hot"); score += add; bump(breakdown, "temperature", add); reasons.push("Very hot air temperature"); }
+        else if (cur <= 0) { const add = 8 * wt("temperature", "cold"); score += add; bump(breakdown, "temperature", add); reasons.push("Cold air temperature"); }
       }
     }
 
-    if (flags.apparentTemperature && wt("apparentTemperature") > 0) {
-      const w = wt("apparentTemperature");
+    if (flags.apparentTemperature) {
       const ap = hour.apparentTempC;
       if (ap != null) {
         if (i > 0) {
           const prev = hours[i - 1].apparentTempC;
           if (prev != null) {
-            const delta = Math.abs(ap - prev);
-            if (delta >= 5) { const add = 18 * w; score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Large change in apparent temperature"); }
-            else if (delta >= 3) { const add = 9 * w; score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Feels-like temperature shifting"); }
+            const delta = ap - prev;
+            if (delta >= 5) { const add = 18 * wt("apparentTemperature", "hot"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Large increase in feels-like temperature"); }
+            else if (delta >= 3) { const add = 9 * wt("apparentTemperature", "hot"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Feels-like temperature trending hotter"); }
+            else if (delta <= -5) { const add = 18 * wt("apparentTemperature", "cold"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Large drop in feels-like temperature"); }
+            else if (delta <= -3) { const add = 9 * wt("apparentTemperature", "cold"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Feels-like temperature trending colder"); }
           }
         }
-        if (ap >= 32) { const add = 12 * w; score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Very high apparent heat"); }
-        else if (ap <= -12) { const add = 12 * w; score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Very cold feels-like temperature"); }
+        if (ap >= 32) { const add = 12 * wt("apparentTemperature", "hot"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Very high apparent heat"); }
+        else if (ap <= -12) { const add = 12 * wt("apparentTemperature", "cold"); score += add; bump(breakdown, "apparentTemperature", add); reasons.push("Very cold feels-like temperature"); }
       }
     }
 
-    if (flags.humidity && wt("humidity") > 0) {
-      const w = wt("humidity");
+    if (flags.humidity) {
       const h = hour.humidityPct;
       if (h != null) {
-        if (h >= 90) { const add = 16 * w; score += add; bump(breakdown, "humidity", add); reasons.push("Very high humidity"); }
-        else if (h >= 85) { const add = 9 * w; score += add; bump(breakdown, "humidity", add); reasons.push("High humidity"); }
+        if (h >= 90) { const add = 16 * wt("humidity", "high"); score += add; bump(breakdown, "humidity", add); reasons.push("Very high humidity"); }
+        else if (h >= 85) { const add = 9 * wt("humidity", "high"); score += add; bump(breakdown, "humidity", add); reasons.push("High humidity"); }
+        else if (h <= 15) { const add = 12 * wt("humidity", "low"); score += add; bump(breakdown, "humidity", add); reasons.push("Very dry air"); }
+        else if (h <= 25) { const add = 7 * wt("humidity", "low"); score += add; bump(breakdown, "humidity", add); reasons.push("Dry air"); }
       }
     }
 
@@ -138,8 +152,8 @@ export function scoreHours(hours, flags, weights) {
       }
     }
 
-    if (flags.precipitation && wt("precipitation") > 0) {
-      const w = wt("precipitation");
+    if (flags.precipitation && wt("precipitation", "high") > 0) {
+      const w = wt("precipitation", "high");
       const rain = hour.rainMm;
       if (rain != null) {
         if (rain >= 1) { const add = 22 * w; score += add; bump(breakdown, "precipitation", add); reasons.push("Heavy precipitation this hour"); }
@@ -147,8 +161,8 @@ export function scoreHours(hours, flags, weights) {
       }
     }
 
-    if (flags.precipitationProbability && wt("precipitationProbability") > 0) {
-      const w = wt("precipitationProbability");
+    if (flags.precipitationProbability && wt("precipitationProbability", "high") > 0) {
+      const w = wt("precipitationProbability", "high");
       const p = hour.precipProbabilityPct;
       if (p != null) {
         if (p >= 85) { const add = 9 * w; score += add; bump(breakdown, "precipitationProbability", add); reasons.push("Very high chance of precipitation"); }
@@ -173,21 +187,21 @@ export function scoreHours(hours, flags, weights) {
       if (s > 0 && reason) { const add = s * w; score += add; bump(breakdown, "weatherCode", add); reasons.push(reason); }
     }
 
-    if (flags.cloudCover && wt("cloudCover") > 0) {
-      const w = wt("cloudCover");
+    if (flags.cloudCover) {
       const cc = hour.cloudCoverPct;
       if (cc != null) {
-        if (cc <= 10) { const add = 5 * w; score += add; bump(breakdown, "cloudCover", add); reasons.push("Mostly clear sky (bright light)"); }
-        else if (cc >= 92) { const add = 5 * w; score += add; bump(breakdown, "cloudCover", add); reasons.push("Very overcast"); }
+        if (cc <= 10) { const add = 5 * wt("cloudCover", "low"); score += add; bump(breakdown, "cloudCover", add); reasons.push("Mostly clear sky (bright light)"); }
+        else if (cc >= 92) { const add = 5 * wt("cloudCover", "high"); score += add; bump(breakdown, "cloudCover", add); reasons.push("Very overcast"); }
       }
     }
 
-    if (flags.wind && wt("wind") > 0) {
-      const w = wt("wind");
+    if (flags.wind) {
       const wind = hour.windSpeedKmh;
       if (wind != null) {
-        if (wind >= 55) { const add = 16 * w; score += add; bump(breakdown, "wind", add); reasons.push("Very strong sustained wind"); }
-        else if (wind >= 40) { const add = 9 * w; score += add; bump(breakdown, "wind", add); reasons.push("Strong wind"); }
+        if (wind >= 55) { const add = 16 * wt("wind", "high"); score += add; bump(breakdown, "wind", add); reasons.push("Very strong sustained wind"); }
+        else if (wind >= 40) { const add = 9 * wt("wind", "high"); score += add; bump(breakdown, "wind", add); reasons.push("Strong wind"); }
+        else if (wind <= 3) { const add = 5 * wt("wind", "low"); score += add; bump(breakdown, "wind", add); reasons.push("Very still air"); }
+        else if (wind <= 8) { const add = 2 * wt("wind", "low"); score += add; bump(breakdown, "wind", add); reasons.push("Low airflow"); }
       }
     }
 

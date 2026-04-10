@@ -20,6 +20,7 @@ import {
   PARAM_REFERENCE,
   PARAM_GROUP_LABELS,
   PARAMS,
+  weightAxesForParam,
 } from "../lib/paramConfig";
 import {
   DEFAULT_LOCATION,
@@ -90,11 +91,15 @@ export default function Settings() {
     });
   }, []);
 
-  const updateWeight = useCallback(async (id, value) => {
+  const updateWeight = useCallback(async (id, axisKey, value) => {
     const num = Number(value);
     if (!Number.isFinite(num)) return;
     setWeights((prev) => {
-      const next = { ...prev, [id]: num };
+      const axes = weightAxesForParam(id);
+      const fallback = Object.fromEntries(axes.map((axis) => [axis.key, 1]));
+      const current = typeof prev[id] === "object" && prev[id] ? prev[id] : fallback;
+      const nextEntry = { ...fallback, ...current, [axisKey]: Math.max(0, num) };
+      const next = { ...prev, [id]: nextEntry };
       saveParamWeights(next);
       return next;
     });
@@ -249,9 +254,10 @@ export default function Settings() {
                   key={p.id}
                   param={{ ...p, blurb: PARAM_REFERENCE[p.id]?.blurb ?? "" }}
                   enabled={!!flags[p.id]}
-                  weight={weights[p.id] ?? 1}
+                  weightAxes={weightAxesForParam(p.id)}
+                  weightValues={weights[p.id]}
                   onToggle={() => updateFlag(p.id, !flags[p.id])}
-                  onWeightChange={(v) => updateWeight(p.id, v)}
+                  onWeightChange={(axisKey, v) => updateWeight(p.id, axisKey, v)}
                 />
               ))}
             </Animated.View>
