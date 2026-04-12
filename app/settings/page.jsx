@@ -2,11 +2,13 @@
 
 import { Button } from "@/components/ui/button"
 import { resolveZipToLocation } from "@/lib/geocodeZip"
+import { formatLocationCoordinates } from "@/lib/locationFormat"
 import {
   DEFAULT_FLAGS,
   PARAM_GROUP_LABELS,
   PARAM_REFERENCE,
   PARAMS,
+  weightAxesForParam,
 } from "@/lib/paramConfig"
 import {
   DEFAULT_LOCATION,
@@ -30,7 +32,7 @@ import {
   Wind,
 } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 const GROUP_ORDER = ["weather", "air", "allergens"]
 
@@ -40,16 +42,15 @@ const GROUP_ICONS = {
   allergens: Leaf,
 }
 
+const GROUP_HINTS = {
+  weather: "Core weather signals that shape comfort and outdoor stress.",
+  air: "Turning on any air factor adds an extra air-quality data request.",
+  allergens: "Turning on pollen factors adds an extra air-quality data request.",
+}
+
 const PARAM_TOOLTIP_OVERRIDES = {
   particulates:
     "PM2.5 and PM10 are tiny particles in the air. PM2.5 are very fine particles that can reach deep into your lungs, while PM10 are larger dust-like particles. Higher levels can make breathing and outdoor activity feel harder.",
-}
-
-function formatLocationCoordinates(location) {
-  const lat = Number(location?.latitude)
-  const lon = Number(location?.longitude)
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return ""
-  return `${lat.toFixed(2)}, ${lon.toFixed(2)}`
 }
 
 function Toggle({ active, onToggle }) {
@@ -75,6 +76,11 @@ function Toggle({ active, onToggle }) {
 }
 
 function WeightPills({ value, onChange }) {
+  const displayLabel = (label) => {
+    if (label === "Ignore") return "Off"
+    return label
+  }
+
   return (
     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
       {WEIGHT_LEVEL_OPTIONS.map((opt) => (
@@ -89,7 +95,7 @@ function WeightPills({ value, onChange }) {
           }`}
           onClick={() => onChange(opt.value)}
         >
-          {opt.label}
+          {displayLabel(opt.label)}
         </button>
       ))}
     </div>
@@ -124,7 +130,7 @@ function ParamTooltip({ label, text }) {
   )
 }
 
-function ParamRow({ param, enabled, weight, onToggle, onWeightChange }) {
+function ParamRow({ param, enabled, weightAxes, weightValues, onToggle, onWeightChange }) {
   const tooltipText = paramTooltipText(param)
 
   return (
@@ -141,12 +147,23 @@ function ParamRow({ param, enabled, weight, onToggle, onWeightChange }) {
         </div>
         <Toggle active={enabled} onToggle={onToggle} />
       </div>
-      <div className="mt-2.5">
-        <p className="mb-1.5 font-data text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          Severity
-        </p>
-        <WeightPills value={weight} onChange={onWeightChange} />
-      </div>
+      {enabled ? (
+        <div className="mt-2.5 space-y-3">
+          {weightAxes.map((axis) => (
+            <div key={axis.key}>
+              <p className="mb-1.5 font-data text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                {axis.label}
+              </p>
+              <WeightPills
+                value={weightValues?.[axis.key] ?? 1}
+                onChange={(v) => onWeightChange(axis.key, v)}
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">Turn this on to tune severity.</p>
+      )}
     </div>
   )
 }
@@ -169,28 +186,36 @@ export default function Settings() {
     setZipInput(storedLocation.zip || "")
   }, [])
 
-  const updateFlag = (id, checked) => {
-    const next = { ...flags, [id]: checked }
-    setFlags(next)
-    saveParamFlags(next)
-  }
+  const updateFlag = useCallback((id, checked) => {
+    setFlags((prev) => {
+      const next = { ...prev, [id]: checked }
+      saveParamFlags(next)
+      return next
+    })
+  }, [])
 
-  const updateWeight = (id, value) => {
+  const updateWeight = useCallback((id, axisKey, value) => {
     const num = Number(value)
     if (!Number.isFinite(num)) return
-    const next = { ...weights, [id]: num }
-    setWeights(next)
-    saveParamWeights(next)
-  }
+    setWeights((prev) => {
+      const axes = weightAxesForParam(id)
+      const fallback = Object.fromEntries(axes.map((axis) => [axis.key, 1]))
+      const current = typeof prev[id] === "object" && prev[id] ? prev[id] : fallback
+      const nextEntry = { ...fallback, ...current, [axisKey]: Math.max(0, num) }
+      const next = { ...prev, [id]: nextEntry }
+      saveParamWeights(next)
+      return next
+    })
+  }, [])
 
-  const applyLocation = (next) => {
+  const applyLocation = useCallback((next) => {
     setLocation(next)
     saveLocationPreference(next)
     if (next?.zip) setZipInput(next.zip)
     setLocationError(null)
-  }
+  }, [])
 
-  const applyZipLocation = async (event) => {
+  const applyZipLocation = useCallback(async (event) => {
     event.preventDefault()
     setFindingZip(true)
     setLocationNotice(null)
@@ -205,9 +230,9 @@ export default function Settings() {
     } finally {
       setFindingZip(false)
     }
-  }
+  }, [zipInput, applyLocation])
 
-  const applyCurrentLocation = () => {
+  const applyCurrentLocation = useCallback(() => {
     setLocationNotice(null)
     if (!navigator.geolocation) {
       setLocationError("Geolocation is not supported in this browser.")
@@ -239,7 +264,7 @@ export default function Settings() {
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 },
     )
-  }
+  }, [applyLocation])
 
   return (
     <div className="field-stagger mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
@@ -253,11 +278,11 @@ export default function Settings() {
 
       <div className="mb-8">
         <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-          Configure your field log
+          Settings that stay readable
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          Choose what outside means for you. Toggle factors on, then set how
-          strongly each one should move your impact score.
+          Keep every factor available, then tune only the ones you care about.
+          If a factor is off, its severity stays out of the way.
         </p>
       </div>
 
@@ -300,7 +325,7 @@ export default function Settings() {
                   className="h-8 w-full rounded-md border border-border bg-background px-2.5 font-data text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring/40"
                 />
                 <Button type="submit" size="sm" disabled={findingZip}>
-                  {findingZip ? "…" : "Apply"}
+                  {findingZip ? "\u2026" : "Apply"}
                 </Button>
               </div>
             </form>
@@ -312,7 +337,7 @@ export default function Settings() {
               className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
             >
               <Navigation className="size-3" strokeWidth={1.75} />
-              {detectingLocation ? "Detecting…" : "Use device location"}
+              {detectingLocation ? "Detecting\u2026" : "Use device location"}
             </button>
 
             {locationNotice && (
@@ -344,23 +369,29 @@ export default function Settings() {
             const groupParams = PARAMS.filter((p) => p.group === groupKey)
             return (
               <section key={groupKey} className="readout-instrument px-5 py-5">
-                <div className="mb-4 flex items-center gap-2.5 border-b border-border pb-3">
+                <div className="mb-4 flex items-start gap-2.5 border-b border-border pb-3">
                   <span className="flex size-8 items-center justify-center rounded-full border border-border bg-card text-foreground">
                     <Icon className="size-3.5" strokeWidth={1.75} />
                   </span>
-                  <h2 className="font-heading text-base font-semibold text-foreground">
-                    {PARAM_GROUP_LABELS[groupKey]}
-                  </h2>
+                  <div className="flex-1">
+                    <h2 className="font-heading text-base font-semibold text-foreground">
+                      {PARAM_GROUP_LABELS[groupKey]}
+                    </h2>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {GROUP_HINTS[groupKey]}
+                    </p>
+                  </div>
                 </div>
                 <div className="divide-y divide-border/70">
                   {groupParams.map((p) => (
                     <ParamRow
                       key={p.id}
-                      param={p}
+                      param={{ ...p, blurb: PARAM_REFERENCE[p.id]?.blurb ?? "" }}
                       enabled={!!flags[p.id]}
-                      weight={weights[p.id] ?? 1}
+                      weightAxes={weightAxesForParam(p.id)}
+                      weightValues={weights[p.id]}
                       onToggle={() => updateFlag(p.id, !flags[p.id])}
-                      onWeightChange={(v) => updateWeight(p.id, v)}
+                      onWeightChange={(axisKey, v) => updateWeight(p.id, axisKey, v)}
                     />
                   ))}
                 </div>
