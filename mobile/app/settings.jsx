@@ -24,7 +24,11 @@ import {
 } from "../lib/paramConfig";
 import {
   DEFAULT_LOCATION,
+  DEFAULT_PROFILE_ID,
+  PROFILE_METADATA,
+  PROFILE_IDS,
   defaultParamWeights,
+  getActiveProfile,
   loadLocationPreference,
   locationDisplayName,
   loadParamFlags,
@@ -32,6 +36,7 @@ import {
   saveLocationPreference,
   saveParamFlags,
   saveParamWeights,
+  setActiveProfile,
 } from "../lib/paramPreferences";
 import { resolveZipToLocation } from "../lib/geocodeZip";
 import { colors } from "../constants/colors";
@@ -62,13 +67,16 @@ export default function Settings() {
   const [locationNotice, setLocationNotice] = useState(null);
   const [findingZip, setFindingZip] = useState(false);
   const [detectingLocation, setDetectingLocation] = useState(false);
+  const [activeProfileId, setActiveProfileId] = useState(DEFAULT_PROFILE_ID);
 
   useEffect(() => {
     (async () => {
+      const id = await getActiveProfile();
+      setActiveProfileId(id);
       const [f, w, loc] = await Promise.all([
-        loadParamFlags(),
-        loadParamWeights(),
-        loadLocationPreference(),
+        loadParamFlags(id),
+        loadParamWeights(id),
+        loadLocationPreference(id),
       ]);
       setFlags(f);
       setWeights(w);
@@ -76,6 +84,21 @@ export default function Settings() {
       setZipInput(loc.zip || "");
     })();
   }, []);
+
+  const switchToProfile = useCallback(async (nextId) => {
+    if (nextId === activeProfileId) return;
+    await setActiveProfile(nextId);
+    setActiveProfileId(nextId);
+    const [f, w, loc] = await Promise.all([
+      loadParamFlags(nextId),
+      loadParamWeights(nextId),
+      loadLocationPreference(nextId),
+    ]);
+    setFlags(f);
+    setWeights(w);
+    setLocation(loc);
+    setZipInput(loc.zip || "");
+  }, [activeProfileId]);
 
   const updateFlag = useCallback(async (id, checked) => {
     setFlags((prev) => {
@@ -166,6 +189,32 @@ export default function Settings() {
             Keep every factor available, then tune only the ones you care about.
             If a factor is off, its severity stays out of the way.
           </Text>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.duration(400).delay(40)} style={styles.profileCard}>
+          <View style={styles.profileHeader}>
+            <Text style={styles.profileTitle}>Profile</Text>
+            <Text style={styles.profileHint}>Saves location and factors per person on this device.</Text>
+          </View>
+          <View style={styles.profileSwitchRow} accessibilityRole="tablist">
+            {PROFILE_IDS.map((id) => {
+              const selected = id === activeProfileId;
+              return (
+                <Pressable
+                  key={id}
+                  onPress={() => switchToProfile(id)}
+                  style={[styles.profileSegment, selected && styles.profileSegmentSelected]}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${PROFILE_METADATA[id].label} profile`}
+                >
+                  <Text style={[styles.profileSegmentText, selected && styles.profileSegmentTextSelected]}>
+                    {PROFILE_METADATA[id].label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </Animated.View>
 
         <Animated.View entering={FadeInDown.duration(400).delay(50)} style={styles.locationCard}>
@@ -291,6 +340,54 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: colors.mutedForeground,
     marginTop: 6,
+  },
+  profileCard: {
+    backgroundColor: colors.surfaceCard,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 12,
+  },
+  profileHeader: {
+    gap: 4,
+  },
+  profileTitle: {
+    fontFamily: fontFamilies.heading,
+    fontSize: 16,
+    color: colors.foreground,
+  },
+  profileHint: {
+    fontFamily: fontFamilies.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.mutedForeground,
+  },
+  profileSwitchRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  profileSegment: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    alignItems: "center",
+  },
+  profileSegmentSelected: {
+    backgroundColor: colors.surfaceInset,
+    borderColor: colors.foreground,
+  },
+  profileSegmentText: {
+    fontFamily: fontFamilies.sansMedium,
+    fontSize: 14,
+    color: colors.mutedForeground,
+  },
+  profileSegmentTextSelected: {
+    color: colors.foreground,
   },
   locationCard: {
     backgroundColor: colors.surfaceCard,

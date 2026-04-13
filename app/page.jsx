@@ -11,13 +11,18 @@ import {
   currentHourPrefixInTimeZone,
 } from "@/lib/normalizeHourly"
 import {
+  ACTIVE_PROFILE_STORAGE_KEY,
   DEFAULT_LOCATION,
   defaultParamWeights,
+  getActiveProfileId,
   hasAnyParamEnabled,
   loadLocationPreference,
   locationDisplayName,
   loadParamFlags,
   loadParamWeights,
+  markWeatherReadoutLoaded,
+  PROFILE_READOUT_LOADED_KEY,
+  takeReadoutAutoRefreshIfNeeded,
 } from "@/lib/paramPreferences"
 import { DEFAULT_FLAGS } from "@/lib/paramConfig"
 import { bandForScore, scoreBandLabel } from "@/lib/scoreBand"
@@ -243,21 +248,15 @@ const Home = () => {
   const [weights, setWeights] = useState(() => defaultParamWeights())
   const [location, setLocation] = useState(() => ({ ...DEFAULT_LOCATION }))
   const loadRequestIdRef = useRef(0)
+  const lastActiveProfileRef = useRef(null)
 
-  useEffect(() => {
+  const syncPreferencesFromStorage = useCallback(() => {
+    const id = getActiveProfileId()
+    lastActiveProfileRef.current = id
     setFlags(loadParamFlags())
     setWeights(loadParamWeights())
     setLocation(loadLocationPreference())
-    const onFocus = () => {
-      const f = loadParamFlags()
-      const w = loadParamWeights()
-      const loc = loadLocationPreference()
-      setFlags(f)
-      setWeights(w)
-      setLocation(loc)
-    }
-    window.addEventListener("focus", onFocus)
-    return () => window.removeEventListener("focus", onFocus)
+    return id
   }, [])
 
   const readoutCache = useMemo(() => {
@@ -314,6 +313,7 @@ const Home = () => {
       const current = scored.find((h) => h.time === nowPrefix) || null
       setCurrentHour(current)
       setSelectedHourTime(current?.time ?? scored[0]?.time ?? null)
+      markWeatherReadoutLoaded()
     } catch (e) {
       if (requestId !== loadRequestIdRef.current) return
       setError(e instanceof Error ? e.message : "Something went wrong")
@@ -322,6 +322,56 @@ const Home = () => {
       setLoading(false)
     }
   }, [invalidateReadoutState])
+
+  const tryReloadAfterProfileChange = useCallback(() => {
+    if (typeof window === "undefined") return
+    try {
+      if (window.sessionStorage.getItem(PROFILE_READOUT_LOADED_KEY) !== "1") return
+      const f = loadParamFlags()
+      if (!hasAnyParamEnabled(f)) return
+      void load()
+    } catch {}
+  }, [load])
+
+  useEffect(() => {
+    const before = lastActiveProfileRef.current
+    const id = syncPreferencesFromStorage()
+    const profileChanged = before !== null && id !== before
+    if (takeReadoutAutoRefreshIfNeeded()) {
+      void load()
+    } else if (
+      profileChanged &&
+      typeof window !== "undefined" &&
+      window.sessionStorage.getItem(PROFILE_READOUT_LOADED_KEY) === "1"
+    ) {
+      const f = loadParamFlags()
+      if (hasAnyParamEnabled(f)) void load()
+    }
+    const onFocus = () => {
+      const was = lastActiveProfileRef.current
+      const now = syncPreferencesFromStorage()
+      if (
+        was !== null &&
+        now !== was &&
+        typeof window !== "undefined" &&
+        window.sessionStorage.getItem(PROFILE_READOUT_LOADED_KEY) === "1"
+      ) {
+        const f = loadParamFlags()
+        if (hasAnyParamEnabled(f)) void load()
+      }
+    }
+    const onStorage = (e) => {
+      if (e.key !== ACTIVE_PROFILE_STORAGE_KEY) return
+      syncPreferencesFromStorage()
+      tryReloadAfterProfileChange()
+    }
+    window.addEventListener("focus", onFocus)
+    window.addEventListener("storage", onStorage)
+    return () => {
+      window.removeEventListener("focus", onFocus)
+      window.removeEventListener("storage", onStorage)
+    }
+  }, [load, syncPreferencesFromStorage, tryReloadAfterProfileChange])
 
   const canLoad = hasAnyParamEnabled(flags)
 
