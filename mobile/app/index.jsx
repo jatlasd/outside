@@ -27,6 +27,7 @@ import {
 import {
   DEFAULT_LOCATION,
   defaultParamWeights,
+  getActiveProfile,
   hasAnyParamEnabled,
   loadLocationPreference,
   locationDisplayName,
@@ -68,8 +69,12 @@ export default function Home() {
   const [location, setLocation] = useState(() => ({ ...DEFAULT_LOCATION }));
   const loadRequestIdRef = useRef(0);
   const preferencesSignatureRef = useRef(null);
+  const preferencesProfileRef = useRef(null);
 
-  const preferencesSignature = useCallback((f, w, loc) => JSON.stringify({ f, w, loc }), []);
+  const preferencesSignature = useCallback(
+    (f, w, loc, profileId) => JSON.stringify({ f, w, loc, profileId }),
+    []
+  );
 
   const invalidateReadoutState = useCallback(() => {
     setError(null);
@@ -82,58 +87,30 @@ export default function Home() {
   }, []);
 
   const loadPreferences = useCallback(async () => {
+    const profileId = await getActiveProfile();
     const [f, w, loc] = await Promise.all([
-      loadParamFlags(),
-      loadParamWeights(),
-      loadLocationPreference(),
+      loadParamFlags(profileId),
+      loadParamWeights(profileId),
+      loadLocationPreference(profileId),
     ]);
     setFlags(f);
     setWeights(w);
     setLocation(loc);
-    return { f, w, loc };
+    return { f, w, loc, profileId };
   }, []);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const { f, w, loc } = await loadPreferences();
+      const { f, w, loc, profileId } = await loadPreferences();
       if (!active) return;
-      preferencesSignatureRef.current = preferencesSignature(f, w, loc);
+      preferencesSignatureRef.current = preferencesSignature(f, w, loc, profileId);
+      preferencesProfileRef.current = profileId;
     })();
     return () => {
       active = false;
     };
   }, [loadPreferences, preferencesSignature]);
-
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      (async () => {
-        const { f, w, loc } = await loadPreferences();
-        if (!active) return;
-        const nextSignature = preferencesSignature(f, w, loc);
-        const previousSignature = preferencesSignatureRef.current;
-        if (previousSignature && previousSignature !== nextSignature) {
-          invalidateReadoutState();
-        }
-        preferencesSignatureRef.current = nextSignature;
-      })();
-      return () => {
-        active = false;
-      };
-    }, [invalidateReadoutState, loadPreferences, preferencesSignature])
-  );
-
-  const readoutCache = useMemo(() => {
-    if (!allScored?.length) return null;
-    const m = new Map();
-    for (const row of allScored) {
-      const offenders = topBreakdownContributors(row.breakdown, 2);
-      const offenderById = new Map(offenders.map((item) => [item.id, item]));
-      m.set(row.time, hourReadoutEntries(row, flags, { offenderById }));
-    }
-    return m;
-  }, [allScored, flags]);
 
   const load = useCallback(async () => {
     const requestId = ++loadRequestIdRef.current;
@@ -171,6 +148,41 @@ export default function Home() {
       setLoading(false);
     }
   }, [invalidateReadoutState, loadPreferences]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        const { f, w, loc, profileId } = await loadPreferences();
+        if (!active) return;
+        const nextSignature = preferencesSignature(f, w, loc, profileId);
+        const previousSignature = preferencesSignatureRef.current;
+        const previousProfile = preferencesProfileRef.current;
+        if (previousSignature && previousSignature !== nextSignature) {
+          invalidateReadoutState();
+          if (previousProfile != null && previousProfile !== profileId) {
+            void load();
+          }
+        }
+        preferencesSignatureRef.current = nextSignature;
+        preferencesProfileRef.current = profileId;
+      })();
+      return () => {
+        active = false;
+      };
+    }, [invalidateReadoutState, load, loadPreferences, preferencesSignature])
+  );
+
+  const readoutCache = useMemo(() => {
+    if (!allScored?.length) return null;
+    const m = new Map();
+    for (const row of allScored) {
+      const offenders = topBreakdownContributors(row.breakdown, 2);
+      const offenderById = new Map(offenders.map((item) => [item.id, item]));
+      m.set(row.time, hourReadoutEntries(row, flags, { offenderById }));
+    }
+    return m;
+  }, [allScored, flags]);
 
   const canLoad = hasAnyParamEnabled(flags);
   const selectedHour = useMemo(() => {

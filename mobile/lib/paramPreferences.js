@@ -5,6 +5,16 @@ export const PARAM_STORAGE_KEY = "weather-included-params";
 export const WEIGHT_STORAGE_KEY = "weather-param-weights";
 export const LOCATION_STORAGE_KEY = "weather-location";
 
+export const PROFILE_IDS = ["me", "wife"];
+export const DEFAULT_PROFILE_ID = "me";
+export const ACTIVE_PROFILE_STORAGE_KEY = "weather-active-profile";
+export const PROFILE_MIGRATION_KEY = "weather-profile-migration-v1";
+
+export const PROFILE_METADATA = {
+  me: { label: "Me" },
+  wife: { label: "Wife" },
+};
+
 export const DEFAULT_LOCATION = {
   source: "default",
   latitude: 52.52,
@@ -12,6 +22,94 @@ export const DEFAULT_LOCATION = {
   label: "Berlin area",
   zip: "",
 };
+
+let profileMigrationPromise = null;
+
+function namespacedParamsKey(profileId) {
+  return `${PARAM_STORAGE_KEY}:${profileId}`;
+}
+
+function namespacedWeightsKey(profileId) {
+  return `${WEIGHT_STORAGE_KEY}:${profileId}`;
+}
+
+function namespacedLocationKey(profileId) {
+  return `${LOCATION_STORAGE_KEY}:${profileId}`;
+}
+
+function normalizeProfileId(profileId) {
+  return profileId === "wife" ? "wife" : "me";
+}
+
+async function ensureProfileMigration() {
+  if (!profileMigrationPromise) {
+    profileMigrationPromise = (async () => {
+      const done = await AsyncStorage.getItem(PROFILE_MIGRATION_KEY);
+      if (done === "1") return;
+      const legacyParam = await AsyncStorage.getItem(PARAM_STORAGE_KEY);
+      const legacyWeight = await AsyncStorage.getItem(WEIGHT_STORAGE_KEY);
+      const legacyLoc = await AsyncStorage.getItem(LOCATION_STORAGE_KEY);
+      const hasLegacy =
+        legacyParam != null || legacyWeight != null || legacyLoc != null;
+      if (hasLegacy) {
+        const tasks = [];
+        if (legacyParam != null) {
+          tasks.push(AsyncStorage.setItem(namespacedParamsKey("me"), legacyParam));
+        }
+        if (legacyWeight != null) {
+          tasks.push(AsyncStorage.setItem(namespacedWeightsKey("me"), legacyWeight));
+        }
+        if (legacyLoc != null) {
+          tasks.push(AsyncStorage.setItem(namespacedLocationKey("me"), legacyLoc));
+        }
+        await Promise.all(tasks);
+        const wifeLoc = normalizeLocation(DEFAULT_LOCATION);
+        await AsyncStorage.setItem(
+          namespacedParamsKey("wife"),
+          JSON.stringify({ ...DEFAULT_FLAGS })
+        );
+        await AsyncStorage.setItem(
+          namespacedWeightsKey("wife"),
+          JSON.stringify(defaultParamWeights())
+        );
+        await AsyncStorage.setItem(
+          namespacedLocationKey("wife"),
+          JSON.stringify(wifeLoc)
+        );
+        await AsyncStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, "me");
+        await AsyncStorage.multiRemove([
+          PARAM_STORAGE_KEY,
+          WEIGHT_STORAGE_KEY,
+          LOCATION_STORAGE_KEY,
+        ]);
+      } else {
+        const existingActive = await AsyncStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY);
+        if (existingActive !== "me" && existingActive !== "wife") {
+          await AsyncStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, DEFAULT_PROFILE_ID);
+        }
+      }
+      await AsyncStorage.setItem(PROFILE_MIGRATION_KEY, "1");
+    })();
+  }
+  await profileMigrationPromise;
+}
+
+export async function getActiveProfile() {
+  await ensureProfileMigration();
+  try {
+    const raw = await AsyncStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY);
+    if (raw === "me" || raw === "wife") return raw;
+    return DEFAULT_PROFILE_ID;
+  } catch {
+    return DEFAULT_PROFILE_ID;
+  }
+}
+
+export async function setActiveProfile(profileId) {
+  await ensureProfileMigration();
+  const id = normalizeProfileId(profileId);
+  await AsyncStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, id);
+}
 
 function defaultWeightEntryForParam(id) {
   const axes = weightAxesForParam(id);
@@ -56,9 +154,11 @@ function normalizeParamWeightEntry(id, input) {
   return next;
 }
 
-export async function loadParamWeights() {
+export async function loadParamWeights(profileId) {
+  await ensureProfileMigration();
+  const id = profileId != null ? normalizeProfileId(profileId) : await getActiveProfile();
   try {
-    const raw = await AsyncStorage.getItem(WEIGHT_STORAGE_KEY);
+    const raw = await AsyncStorage.getItem(namespacedWeightsKey(id));
     if (!raw) return defaultParamWeights();
     const parsed = JSON.parse(raw);
     if (typeof parsed !== "object" || !parsed) return defaultParamWeights();
@@ -72,19 +172,23 @@ export async function loadParamWeights() {
   }
 }
 
-export async function saveParamWeights(weights) {
+export async function saveParamWeights(weights, profileId) {
+  await ensureProfileMigration();
+  const id = profileId != null ? normalizeProfileId(profileId) : await getActiveProfile();
   const next = defaultParamWeights();
   if (typeof weights === "object" && weights) {
     for (const p of PARAMS) {
       next[p.id] = normalizeParamWeightEntry(p.id, weights[p.id]);
     }
   }
-  await AsyncStorage.setItem(WEIGHT_STORAGE_KEY, JSON.stringify(next));
+  await AsyncStorage.setItem(namespacedWeightsKey(id), JSON.stringify(next));
 }
 
-export async function loadParamFlags() {
+export async function loadParamFlags(profileId) {
+  await ensureProfileMigration();
+  const id = profileId != null ? normalizeProfileId(profileId) : await getActiveProfile();
   try {
-    const raw = await AsyncStorage.getItem(PARAM_STORAGE_KEY);
+    const raw = await AsyncStorage.getItem(namespacedParamsKey(id));
     if (!raw) return { ...DEFAULT_FLAGS };
     const parsed = JSON.parse(raw);
     if (typeof parsed !== "object" || !parsed) return { ...DEFAULT_FLAGS };
@@ -94,8 +198,10 @@ export async function loadParamFlags() {
   }
 }
 
-export async function saveParamFlags(flags) {
-  await AsyncStorage.setItem(PARAM_STORAGE_KEY, JSON.stringify(flags));
+export async function saveParamFlags(flags, profileId) {
+  await ensureProfileMigration();
+  const id = profileId != null ? normalizeProfileId(profileId) : await getActiveProfile();
+  await AsyncStorage.setItem(namespacedParamsKey(id), JSON.stringify(flags));
 }
 
 export function hasAnyParamEnabled(flags) {
@@ -114,9 +220,11 @@ function normalizeLocation(input) {
   return { source, latitude, longitude, label: label || DEFAULT_LOCATION.label, zip };
 }
 
-export async function loadLocationPreference() {
+export async function loadLocationPreference(profileId) {
+  await ensureProfileMigration();
+  const id = profileId != null ? normalizeProfileId(profileId) : await getActiveProfile();
   try {
-    const raw = await AsyncStorage.getItem(LOCATION_STORAGE_KEY);
+    const raw = await AsyncStorage.getItem(namespacedLocationKey(id));
     if (!raw) return { ...DEFAULT_LOCATION };
     const parsed = JSON.parse(raw);
     return normalizeLocation(parsed);
@@ -125,9 +233,11 @@ export async function loadLocationPreference() {
   }
 }
 
-export async function saveLocationPreference(location) {
+export async function saveLocationPreference(location, profileId) {
+  await ensureProfileMigration();
+  const id = profileId != null ? normalizeProfileId(profileId) : await getActiveProfile();
   const normalized = normalizeLocation(location);
-  await AsyncStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify(normalized));
+  await AsyncStorage.setItem(namespacedLocationKey(id), JSON.stringify(normalized));
 }
 
 export function locationDisplayName(location) {

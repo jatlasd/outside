@@ -13,13 +13,17 @@ import {
 import {
   DEFAULT_LOCATION,
   defaultParamWeights,
+  getActiveProfileId,
   loadLocationPreference,
   locationDisplayName,
   loadParamFlags,
   loadParamWeights,
+  PROFILE_IDS,
+  PROFILE_METADATA,
   saveLocationPreference,
   saveParamFlags,
   saveParamWeights,
+  setActiveProfileId,
   WEIGHT_LEVEL_OPTIONS,
 } from "@/lib/paramPreferences"
 import {
@@ -169,6 +173,7 @@ function ParamRow({ param, enabled, weightAxes, weightValues, onToggle, onWeight
 }
 
 export default function Settings() {
+  const [activeProfile, setActiveProfile] = useState("me")
   const [flags, setFlags] = useState(() => ({ ...DEFAULT_FLAGS }))
   const [weights, setWeights] = useState(() => defaultParamWeights())
   const [location, setLocation] = useState(() => ({ ...DEFAULT_LOCATION }))
@@ -179,11 +184,26 @@ export default function Settings() {
   const [detectingLocation, setDetectingLocation] = useState(false)
 
   useEffect(() => {
-    setFlags(loadParamFlags())
-    setWeights(loadParamWeights())
-    const storedLocation = loadLocationPreference()
+    const id = getActiveProfileId()
+    setActiveProfile(id)
+    setFlags(loadParamFlags(id))
+    setWeights(loadParamWeights(id))
+    const storedLocation = loadLocationPreference(id)
     setLocation(storedLocation)
     setZipInput(storedLocation.zip || "")
+  }, [])
+
+  const switchProfile = useCallback((nextId) => {
+    if (!PROFILE_IDS.includes(nextId)) return
+    setActiveProfileId(nextId)
+    setActiveProfile(nextId)
+    setFlags(loadParamFlags(nextId))
+    setWeights(loadParamWeights(nextId))
+    const storedLocation = loadLocationPreference(nextId)
+    setLocation(storedLocation)
+    setZipInput(storedLocation.zip || "")
+    setLocationError(null)
+    setLocationNotice(null)
   }, [])
 
   const updateFlag = useCallback((id, checked) => {
@@ -284,6 +304,39 @@ export default function Settings() {
           Keep every factor available, then tune only the ones you care about.
           If a factor is off, its severity stays out of the way.
         </p>
+        <div className="mt-5">
+          <p className="mb-2 font-data text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            Profile
+          </p>
+          <div
+            className="inline-flex rounded-lg border border-border bg-background/60 p-1"
+            role="group"
+            aria-label="Active profile"
+          >
+            {PROFILE_IDS.map((id) => {
+              const selected = activeProfile === id
+              const label = PROFILE_METADATA[id]?.label ?? id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => switchProfile(id)}
+                  className={`rounded-md px-4 py-2 text-xs font-medium tracking-wide transition-colors ${
+                    selected
+                      ? "bg-foreground text-background shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Location and scoring preferences are saved per profile.
+          </p>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
