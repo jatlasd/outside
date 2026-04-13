@@ -11,8 +11,8 @@ export const ACTIVE_PROFILE_STORAGE_KEY = "weather-active-profile";
 export const PROFILE_MIGRATION_KEY = "weather-profile-migration-v1";
 
 export const PROFILE_METADATA = {
-  me: { label: "Me" },
-  wife: { label: "Wife" },
+  me: { label: "1" },
+  wife: { label: "2" },
 };
 
 export const DEFAULT_LOCATION = {
