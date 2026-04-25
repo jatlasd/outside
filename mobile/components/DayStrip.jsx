@@ -1,3 +1,4 @@
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { colors } from "../constants/colors";
 import { fontFamilies } from "../constants/fonts";
@@ -5,17 +6,63 @@ import { formatTimeKey12Hour } from "../lib/time";
 
 const CELL_WIDTH = 74;
 const BAR_HEIGHT = 40;
+const GAP = 6;
+const H_PADDING = 4;
 
 export function DayStrip({ scored, selectedTime, onSelect }) {
+  const scrollRef = useRef(null);
+  const viewportWRef = useRef(0);
+  const batchKeyRef = useRef(null);
+  const pendingCenterRef = useRef(false);
+
+  const scrollSelectedToCenter = useCallback(() => {
+    if (!scored?.length || !selectedTime || !pendingCenterRef.current) return;
+    const vw = viewportWRef.current;
+    if (vw <= 0) return;
+    const idx = scored.findIndex((r) => r.time === selectedTime);
+    const i = idx >= 0 ? idx : 0;
+    const cellStep = CELL_WIDTH + GAP;
+    const contentWidth =
+      H_PADDING * 2 + scored.length * CELL_WIDTH + Math.max(0, scored.length - 1) * GAP;
+    const cellCenterX = H_PADDING + i * cellStep + CELL_WIDTH / 2;
+    const x = cellCenterX - vw / 2;
+    const maxScroll = Math.max(0, contentWidth - vw);
+    scrollRef.current?.scrollTo({ x: Math.max(0, Math.min(x, maxScroll)), animated: false });
+    pendingCenterRef.current = false;
+  }, [scored, selectedTime]);
+
+  useLayoutEffect(() => {
+    if (!scored?.length || !selectedTime) return;
+    const batchKey = scored.map((r) => r.time).join("|");
+    if (batchKeyRef.current === batchKey) return;
+    batchKeyRef.current = batchKey;
+    pendingCenterRef.current = true;
+    scrollSelectedToCenter();
+  }, [scored, selectedTime, scrollSelectedToCenter]);
+
+  const onStripLayout = useCallback(
+    (e) => {
+      viewportWRef.current = e.nativeEvent.layout.width;
+      if (pendingCenterRef.current) scrollSelectedToCenter();
+    },
+    [scrollSelectedToCenter]
+  );
+
+  const onContentSizeChange = useCallback(() => {
+    if (pendingCenterRef.current) scrollSelectedToCenter();
+  }, [scrollSelectedToCenter]);
+
   if (!scored?.length) return null;
 
   return (
-    <View style={styles.wrap}>
+    <View style={styles.wrap} onLayout={onStripLayout}>
       <ScrollView
+        ref={scrollRef}
         horizontal
         showsHorizontalScrollIndicator
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        onContentSizeChange={onContentSizeChange}
       >
         {scored.map((r) => {
           const selected = selectedTime === r.time;

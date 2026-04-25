@@ -34,7 +34,7 @@ import {
 import { formatTimeKey12Hour } from "@/lib/time"
 import { Settings2 } from "lucide-react"
 import Link from "next/link"
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 const BAND_TINT = {
   low: "bg-[oklch(0.96_0.03_145/0.35)]",
@@ -89,9 +89,22 @@ function prioritizedEntries(entries, count) {
 }
 
 function DayStrip({ scored, selectedTime, onSelect }) {
+  const scrollRef = useRef(null)
+  const batchKeyRef = useRef(null)
+
+  useLayoutEffect(() => {
+    if (!scored?.length || !selectedTime) return
+    const batchKey = scored.map((r) => r.time).join("|")
+    if (batchKeyRef.current === batchKey) return
+    batchKeyRef.current = batchKey
+    const root = scrollRef.current
+    const el = root?.querySelector?.(`[data-hour="${CSS.escape(selectedTime)}"]`)
+    el?.scrollIntoView({ inline: "center", block: "nearest" })
+  }, [scored, selectedTime])
+
   if (!scored?.length) return null
   return (
-    <div className="mb-4 overflow-x-auto border-y border-border">
+    <div ref={scrollRef} className="mb-4 overflow-x-auto border-y border-border">
       <div className="flex items-end gap-1.5 px-1 py-2" style={{ minWidth: scored.length * 80 }}>
         {scored.map((r) => {
           const selected = selectedTime === r.time
@@ -100,6 +113,7 @@ function DayStrip({ scored, selectedTime, onSelect }) {
             <button
               key={r.time}
               type="button"
+              data-hour={r.time}
               onClick={() => onSelect?.(r.time)}
               className={`flex w-[74px] shrink-0 flex-col items-center gap-1 rounded-lg pb-1.5 pt-1 transition-colors ${selected ? "border-[1.5px] border-foreground bg-[oklch(0.93_0.015_85/0.35)]" : "border-[1.5px] border-transparent hover:bg-muted/30"}`}
               aria-label={`Select ${formatTimeKey12Hour(r.time)}`}
