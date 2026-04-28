@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { View, Text, Pressable, StyleSheet, LayoutAnimation, Platform, UIManager } from "react-native";
 import { colors, scoreBandColors, offenderHighlight } from "../constants/colors";
 import { fontFamilies } from "../constants/fonts";
@@ -22,7 +22,7 @@ function prioritizedEntries(entries, count) {
   return [...offenders, ...remainder].slice(0, count);
 }
 
-export function HourRow({ row, readoutEntries, isEven, defaultExpanded = false, hideSummaryTap = false }) {
+export function HourRow({ row, readoutEntries, isEven, defaultExpanded = false, hideSummaryTap = false, showYesterdayHint = false }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [showAllMetrics, setShowAllMetrics] = useState(false);
   const band = bandForScore(row.score);
@@ -35,11 +35,6 @@ export function HourRow({ row, readoutEntries, isEven, defaultExpanded = false, 
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded((v) => !v);
   }, [hideSummaryTap]);
-
-  useEffect(() => {
-    setExpanded(defaultExpanded);
-    if (!defaultExpanded) setShowAllMetrics(false);
-  }, [defaultExpanded]);
 
   return (
     <View style={[styles.container, isEven && styles.evenRow, bandColor && { backgroundColor: bandColor.bg }]}>
@@ -92,6 +87,9 @@ export function HourRow({ row, readoutEntries, isEven, defaultExpanded = false, 
                 <Text style={[styles.entryValue, entry.isOffender && styles.offenderValue]}>
                   {entry.desc}
                 </Text>
+                {showYesterdayHint && entry.yesterdayLine ? (
+                  <Text style={styles.yesterdayHint}>{entry.yesterdayLine}</Text>
+                ) : null}
                 {showAllMetrics && entry.referenceRange ? (
                   <Text style={styles.entryRef}>Ref: {entry.referenceRange}</Text>
                 ) : null}
@@ -220,6 +218,13 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.data,
     fontSize: 14,
     color: colors.foreground,
+  },
+  yesterdayHint: {
+    fontFamily: fontFamilies.sans,
+    fontSize: 11,
+    color: colors.mutedForeground,
+    marginTop: 4,
+    lineHeight: 15,
   },
   offenderValue: {
     fontFamily: fontFamilies.dataSemiBold,

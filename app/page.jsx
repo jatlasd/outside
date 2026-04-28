@@ -1,13 +1,15 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { hourReadoutEntries } from "@/lib/formatImperial"
+import { hourReadoutEntries, yesterdayComparisonLine } from "@/lib/formatImperial"
 import { getWeather } from "@/lib/getWeather"
 import { formatLocationCoordinates } from "@/lib/locationFormat"
 import {
   filterHoursByDatePrefix,
   normalizeHourly,
   todayDatePrefixInTimeZone,
+  calendarDatePrefixInTimeZone,
+  sameClockHourOnDatePrefix,
   currentHourPrefixInTimeZone,
 } from "@/lib/normalizeHourly"
 import {
@@ -136,17 +138,12 @@ function DayStrip({ scored, selectedTime, onSelect }) {
   )
 }
 
-function HourRow({ row, readoutEntries, isEven, defaultExpanded, hideSummaryTap }) {
+function HourRow({ row, readoutEntries, isEven, defaultExpanded, hideSummaryTap, showYesterdayHint }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [showAllMetrics, setShowAllMetrics] = useState(false)
   const band = bandForScore(row.score)
   const primaryEntries = prioritizedEntries(readoutEntries ?? [], 3)
   const visibleEntries = showAllMetrics ? (readoutEntries ?? []) : primaryEntries
-
-  useEffect(() => {
-    setExpanded(defaultExpanded)
-    if (!defaultExpanded) setShowAllMetrics(false)
-  }, [defaultExpanded])
 
   const toggle = useCallback(() => {
     if (hideSummaryTap) return
@@ -203,7 +200,7 @@ function HourRow({ row, readoutEntries, isEven, defaultExpanded, hideSummaryTap 
       {expanded && visibleEntries?.length > 0 && (
         <div className="border-t border-border/80 bg-background/40 px-3 py-4 pl-[calc(0.75rem+3px)] sm:pl-6">
           <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-            {visibleEntries.map(({ id, term, desc, blurb, referenceRange, flaggedWhen, isOffender, offenderPct }) => (
+            {visibleEntries.map(({ id, term, desc, blurb, referenceRange, flaggedWhen, isOffender, offenderPct, yesterdayLine }) => (
               <div
                 key={`${row.time}-${id}`}
                 className={`relative -mx-2 flex flex-col gap-0.5 rounded-sm px-2 py-1.5 sm:flex-row sm:gap-2 ${isOffender ? "border-l-2 border-l-[oklch(0.5_0.16_35)] bg-[oklch(0.94_0.07_35/0.22)] pl-[calc(0.5rem-2px)]" : ""}`}
@@ -232,6 +229,11 @@ function HourRow({ row, readoutEntries, isEven, defaultExpanded, hideSummaryTap 
                 </dt>
                 <dd className="font-data text-sm tabular-nums text-foreground">
                   <span className={isOffender ? "font-semibold text-foreground" : ""}>{desc}</span>
+                  {showYesterdayHint && yesterdayLine ? (
+                    <p className="mt-1 font-sans text-[11px] font-normal leading-snug text-muted-foreground">
+                      {yesterdayLine}
+                    </p>
+                  ) : null}
                   {showAllMetrics && referenceRange ? <p className="font-sans text-[11px] leading-snug text-muted-foreground">Ref: {referenceRange}</p> : null}
                   {isOffender ? <p className="font-sans text-[11px] leading-snug text-[oklch(0.42_0.12_35)]">Main offender this hour ({Math.round(offenderPct)}% of penalty)</p> : null}
                 </dd>
@@ -252,9 +254,9 @@ function HourRow({ row, readoutEntries, isEven, defaultExpanded, hideSummaryTap 
 const Home = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [rollup, setRollup] = useState(null)
-  const [allScored, setAllScored] = useState(null)
-  const [currentHour, setCurrentHour] = useState(null)
+  const [weatherNormalizedHours, setWeatherNormalizedHours] = useState(null)
+  const [weatherTimezone, setWeatherTimezone] = useState(null)
+  const [viewedDayOffset, setViewedDayOffset] = useState(0)
   const [selectedHourTime, setSelectedHourTime] = useState(null)
   const [showAllHours, setShowAllHours] = useState(false)
   const [showDayBreakdown, setShowDayBreakdown] = useState(false)
@@ -263,6 +265,28 @@ const Home = () => {
   const [location, setLocation] = useState(() => ({ ...DEFAULT_LOCATION }))
   const loadRequestIdRef = useRef(0)
   const lastActiveProfileRef = useRef(null)
+
+  const viewedDatePrefix = useMemo(() => {
+    if (!weatherTimezone) return null
+    return calendarDatePrefixInTimeZone(weatherTimezone, viewedDayOffset)
+  }, [weatherTimezone, viewedDayOffset])
+
+  const allScored = useMemo(() => {
+    if (!viewedDatePrefix || !weatherNormalizedHours?.length) return null
+    const dayHours = filterHoursByDatePrefix(weatherNormalizedHours, viewedDatePrefix)
+    const scored = scoreHours(dayHours, flags, weights)
+    return scored.length ? scored : null
+  }, [weatherNormalizedHours, viewedDatePrefix, flags, weights])
+
+  const rollup = useMemo(() => {
+    if (!allScored?.length) return null
+    return rollupHours(allScored)
+  }, [allScored])
+
+  const hourByTime = useMemo(() => {
+    if (!weatherNormalizedHours?.length) return new Map()
+    return new Map(weatherNormalizedHours.map((h) => [h.time, h]))
+  }, [weatherNormalizedHours])
 
   const syncPreferencesFromStorage = useCallback(() => {
     const id = getActiveProfileId()
@@ -273,22 +297,39 @@ const Home = () => {
     return id
   }, [])
 
+  const priorDayComparisonLabel = useMemo(() => {
+    if (viewedDayOffset === 0) return "Yesterday"
+    if (viewedDayOffset === 1) return "Today"
+    return "2 days ago"
+  }, [viewedDayOffset])
+
   const readoutCache = useMemo(() => {
-    if (!allScored?.length) return null
+    if (!allScored?.length || !weatherTimezone) return null
+    const priorPrefix = calendarDatePrefixInTimeZone(weatherTimezone, viewedDayOffset - 1)
     const m = new Map()
     for (const row of allScored) {
       const offenders = topBreakdownContributors(row.breakdown, 2)
       const offenderById = new Map(offenders.map((item) => [item.id, item]))
-      m.set(row.time, hourReadoutEntries(row, flags, { offenderById }))
+      const yKey = sameClockHourOnDatePrefix(row.time, priorPrefix)
+      const yRow = yKey ? hourByTime.get(yKey) : null
+      const compareYesterday = new Map()
+      if (yRow) {
+        for (const id of Object.keys(flags)) {
+          if (!flags[id]) continue
+          const line = yesterdayComparisonLine(id, row, yRow, priorDayComparisonLabel)
+          if (line) compareYesterday.set(id, line)
+        }
+      }
+      m.set(row.time, hourReadoutEntries(row, flags, { offenderById, compareYesterday }))
     }
     return m
-  }, [allScored, flags])
+  }, [allScored, flags, hourByTime, weatherTimezone, viewedDayOffset, priorDayComparisonLabel])
 
   const invalidateReadoutState = useCallback(() => {
     setError(null)
-    setRollup(null)
-    setAllScored(null)
-    setCurrentHour(null)
+    setWeatherNormalizedHours(null)
+    setWeatherTimezone(null)
+    setViewedDayOffset(0)
     setSelectedHourTime(null)
     setShowAllHours(false)
     setShowDayBreakdown(false)
@@ -311,22 +352,18 @@ const Home = () => {
         setError("Turn on at least one parameter in Settings.")
         return
       }
-      const { forecast, air, timezone } = await getWeather(f, loc)
+      const { forecast, air, timezone } = await getWeather(f, loc, { pastDays: 2 })
       if (requestId !== loadRequestIdRef.current) return
       const hours = normalizeHourly(forecast, air, f)
       const todayPrefix = todayDatePrefixInTimeZone(timezone)
       const todayHours = filterHoursByDatePrefix(hours, todayPrefix)
-      const scored = scoreHours(todayHours, f, w)
-      if (!scored.length) {
+      if (!todayHours.length) {
         setError("No usable hourly readings are available for today at this location.")
         return
       }
-      setAllScored(scored)
-      setRollup(rollupHours(scored))
-      const nowPrefix = currentHourPrefixInTimeZone(timezone)
-      const current = scored.find((h) => h.time === nowPrefix) || null
-      setCurrentHour(current)
-      setSelectedHourTime(current?.time ?? scored[0]?.time ?? null)
+      setWeatherNormalizedHours(hours)
+      setWeatherTimezone(timezone)
+      setViewedDayOffset(0)
       markWeatherReadoutLoaded()
     } catch (e) {
       if (requestId !== loadRequestIdRef.current) return
@@ -336,6 +373,51 @@ const Home = () => {
       setLoading(false)
     }
   }, [invalidateReadoutState])
+
+  useEffect(() => {
+    if (!allScored?.length) {
+      setSelectedHourTime(null)
+      return
+    }
+    setSelectedHourTime((prev) => {
+      if (prev && viewedDatePrefix) {
+        const mapped = sameClockHourOnDatePrefix(prev, viewedDatePrefix)
+        if (mapped && allScored.some((h) => h.time === mapped)) return mapped
+      }
+      if (viewedDayOffset === 0 && weatherTimezone) {
+        const nowPrefix = currentHourPrefixInTimeZone(weatherTimezone)
+        const hit = allScored.find((h) => h.time === nowPrefix)
+        if (hit) return hit.time
+      }
+      return allScored[0].time
+    })
+  }, [allScored, viewedDatePrefix, viewedDayOffset, weatherTimezone])
+
+  const yesterdayPrefix = useMemo(() => {
+    if (!weatherTimezone) return null
+    return calendarDatePrefixInTimeZone(weatherTimezone, -1)
+  }, [weatherTimezone])
+
+  const tomorrowPrefix = useMemo(() => {
+    if (!weatherTimezone) return null
+    return calendarDatePrefixInTimeZone(weatherTimezone, 1)
+  }, [weatherTimezone])
+
+  const hasYesterdayHours = useMemo(() => {
+    if (!yesterdayPrefix || !weatherNormalizedHours?.length) return false
+    return weatherNormalizedHours.some((h) => h.time.startsWith(yesterdayPrefix))
+  }, [yesterdayPrefix, weatherNormalizedHours])
+
+  const hasTomorrowHours = useMemo(() => {
+    if (!tomorrowPrefix || !weatherNormalizedHours?.length) return false
+    return weatherNormalizedHours.some((h) => h.time.startsWith(tomorrowPrefix))
+  }, [tomorrowPrefix, weatherNormalizedHours])
+
+  const currentHour = useMemo(() => {
+    if (viewedDayOffset !== 0 || !allScored?.length || !weatherTimezone) return null
+    const nowPrefix = currentHourPrefixInTimeZone(weatherTimezone)
+    return allScored.find((h) => h.time === nowPrefix) ?? null
+  }, [viewedDayOffset, allScored, weatherTimezone])
 
   const tryReloadAfterProfileChange = useCallback(() => {
     if (typeof window === "undefined") return
@@ -401,6 +483,33 @@ const Home = () => {
     return selectedHour ? [selectedHour] : []
   }, [allScored, showAllHours, selectedHour])
 
+  const viewedDayShortLabel = useMemo(() => {
+    if (!viewedDatePrefix) return ""
+    const parts = viewedDatePrefix.split("-").map(Number)
+    const y = parts[0]
+    const mo = parts[1]
+    const d = parts[2]
+    if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return viewedDatePrefix
+    const dt = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0))
+    try {
+      return dt.toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      })
+    } catch {
+      return viewedDatePrefix
+    }
+  }, [viewedDatePrefix])
+
+  const dayNavButtonClass = (active) =>
+    `rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+      active
+        ? "border-foreground bg-foreground text-background"
+        : "border-border bg-background text-foreground hover:bg-muted/40"
+    }`
+
   return (
     <div className="field-stagger mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -440,7 +549,7 @@ const Home = () => {
             disabled={loading || !canLoad}
             className="shrink-0"
           >
-            {loading ? "Loading\u2026" : "Load today"}
+            {loading ? "Loading\u2026" : "Load readout"}
           </Button>
         </div>
       </div>
@@ -466,11 +575,46 @@ const Home = () => {
         </p>
       ) : null}
 
-      {loading && !rollup ? (
-        <div
-          className="readout-instrument grid min-h-[230px] animate-pulse grid-cols-1 gap-4 md:grid-cols-2"
-          aria-hidden
-        />
+      {weatherNormalizedHours && !error ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border pb-4">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Day
+          </span>
+          <button
+            type="button"
+            className={dayNavButtonClass(viewedDayOffset === -1)}
+            disabled={!hasYesterdayHours}
+            onClick={() => setViewedDayOffset(-1)}
+          >
+            Yesterday
+          </button>
+          <button
+            type="button"
+            className={dayNavButtonClass(viewedDayOffset === 0)}
+            onClick={() => setViewedDayOffset(0)}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            className={dayNavButtonClass(viewedDayOffset === 1)}
+            disabled={!hasTomorrowHours}
+            onClick={() => setViewedDayOffset(1)}
+          >
+            Tomorrow
+          </button>
+          {viewedDatePrefix ? (
+            <span className="ml-auto font-data text-xs tabular-nums text-muted-foreground">
+              {viewedDayShortLabel} · {viewedDatePrefix}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {weatherNormalizedHours && !error && !allScored?.length ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          No hourly readings for this day in the loaded window. Try another day or refresh the readout.
+        </p>
       ) : null}
 
       {currentHour || rollup ? (
@@ -509,10 +653,14 @@ const Home = () => {
                   )}
                 </div>
               </div>
+            ) : viewedDayOffset === 0 ? (
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                No matching current-hour reading yet. Refresh the readout to evaluate immediate
+                outside impact.
+              </p>
             ) : (
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                No matching current-hour reading yet. Load today to evaluate immediate
-                outside impact.
+                Live &ldquo;right now&rdquo; impact is for today only. Use Today above to jump back.
               </p>
             )}
           </article>
@@ -541,7 +689,7 @@ const Home = () => {
               </div>
             ) : (
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                Day impact appears after loading today&apos;s hours.
+                Day impact appears after loading the readout.
               </p>
             )}
           </article>
@@ -555,7 +703,7 @@ const Home = () => {
             onClick={() => setShowDayBreakdown((v) => !v)}
             className="mb-2 text-xs font-medium text-foreground"
           >
-            {showDayBreakdown ? "Hide day breakdown" : "Why today looks this way"}
+            {showDayBreakdown ? "Hide day breakdown" : "Why this day looks this way"}
           </button>
           {showDayBreakdown && (
             <section className="readout-instrument px-4 py-4 sm:px-5 sm:py-5">
@@ -568,7 +716,7 @@ const Home = () => {
               <div className="mt-4 grid gap-5 md:grid-cols-[1.2fr_0.8fr]">
                 <div>
                   <p className="font-heading text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Top drivers today
+                    Top drivers this day
                   </p>
                   {rollup.breakdown?.items?.length ? (
                     <ul className="mt-3 space-y-2.5">
@@ -644,11 +792,17 @@ const Home = () => {
         <div>
           <h2 className="font-heading mb-1 text-lg font-semibold text-foreground">
             Hourly timeline
+            {viewedDayShortLabel ? (
+              <span className="ml-2 font-data text-base font-normal text-muted-foreground">
+                · {viewedDayShortLabel}
+              </span>
+            ) : null}
           </h2>
           <p className="mb-4 text-sm text-muted-foreground">
             Pick an hour first. Scroll sideways; each column is one hour. Darker fills mean
             stronger outside pressure. Values show in &deg;F; trend thresholds use &deg;C steps
-            internally, then your sensitivity weights apply.
+            internally, then your sensitivity weights apply. Open details to compare the same
+            clock hour to the prior calendar day when data is available.
           </p>
           <DayStrip
             scored={allScored}
@@ -665,12 +819,13 @@ const Home = () => {
           <div className="border border-border">
             {visibleHours.map((row, i) => (
               <HourRow
-                key={row.time}
+                key={`${row.time}-${showAllHours}`}
                 row={row}
                 readoutEntries={readoutCache?.get(row.time) ?? []}
                 isEven={i % 2 === 1}
                 defaultExpanded={!showAllHours}
                 hideSummaryTap={!showAllHours}
+                showYesterdayHint={Boolean(readoutCache?.get(row.time)?.some((e) => e.yesterdayLine))}
               />
             ))}
           </div>
