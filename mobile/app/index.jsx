@@ -16,12 +16,14 @@ import { Button } from "../components/Button";
 import { ImpactCard, DayImpactCard } from "../components/ImpactCard";
 import { DayStrip } from "../components/DayStrip";
 import { HourRow } from "../components/HourRow";
-import { hourReadoutEntries } from "../lib/formatImperial";
+import { hourReadoutEntries, yesterdayComparisonLine } from "../lib/formatImperial";
 import { getWeather } from "../lib/getWeather";
 import {
   filterHoursByDatePrefix,
   normalizeHourly,
   todayDatePrefixInTimeZone,
+  calendarDatePrefixInTimeZone,
+  sameClockHourOnDatePrefix,
   currentHourPrefixInTimeZone,
 } from "../lib/normalizeHourly";
 import {
@@ -58,9 +60,9 @@ export default function Home() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [rollup, setRollup] = useState(null);
-  const [allScored, setAllScored] = useState(null);
-  const [currentHour, setCurrentHour] = useState(null);
+  const [weatherNormalizedHours, setWeatherNormalizedHours] = useState(null);
+  const [weatherTimezone, setWeatherTimezone] = useState(null);
+  const [viewedDayOffset, setViewedDayOffset] = useState(0);
   const [selectedHourTime, setSelectedHourTime] = useState(null);
   const [showAllHours, setShowAllHours] = useState(false);
   const [showDayBreakdown, setShowDayBreakdown] = useState(false);
@@ -78,9 +80,9 @@ export default function Home() {
 
   const invalidateReadoutState = useCallback(() => {
     setError(null);
-    setRollup(null);
-    setAllScored(null);
-    setCurrentHour(null);
+    setWeatherNormalizedHours(null);
+    setWeatherTimezone(null);
+    setViewedDayOffset(0);
     setSelectedHourTime(null);
     setShowAllHours(false);
     setShowDayBreakdown(false);
@@ -124,22 +126,18 @@ export default function Home() {
         setError("Turn on at least one parameter in Settings.");
         return;
       }
-      const { forecast, air, timezone } = await getWeather(f, loc);
+      const { forecast, air, timezone } = await getWeather(f, loc, { pastDays: 2 });
       if (requestId !== loadRequestIdRef.current) return;
       const hours = normalizeHourly(forecast, air, f);
       const todayPrefix = todayDatePrefixInTimeZone(timezone);
       const todayHours = filterHoursByDatePrefix(hours, todayPrefix);
-      const scored = scoreHours(todayHours, f, w);
-      if (!scored.length) {
+      if (!todayHours.length) {
         setError("No usable hourly readings are available for today at this location.");
         return;
       }
-      setAllScored(scored);
-      setRollup(rollupHours(scored));
-      const nowPrefix = currentHourPrefixInTimeZone(timezone);
-      const current = scored.find((h) => h.time === nowPrefix) || null;
-      setCurrentHour(current);
-      setSelectedHourTime(current?.time ?? scored[0]?.time ?? null);
+      setWeatherNormalizedHours(hours);
+      setWeatherTimezone(timezone);
+      setViewedDayOffset(0);
     } catch (e) {
       if (requestId !== loadRequestIdRef.current) return;
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -173,16 +171,120 @@ export default function Home() {
     }, [invalidateReadoutState, load, loadPreferences, preferencesSignature])
   );
 
-  const readoutCache = useMemo(() => {
+  const viewedDatePrefix = useMemo(() => {
+    if (!weatherTimezone) return null;
+    return calendarDatePrefixInTimeZone(weatherTimezone, viewedDayOffset);
+  }, [weatherTimezone, viewedDayOffset]);
+
+  const allScored = useMemo(() => {
+    if (!viewedDatePrefix || !weatherNormalizedHours?.length) return null;
+    const dayHours = filterHoursByDatePrefix(weatherNormalizedHours, viewedDatePrefix);
+    const scored = scoreHours(dayHours, flags, weights);
+    return scored.length ? scored : null;
+  }, [weatherNormalizedHours, viewedDatePrefix, flags, weights]);
+
+  const rollup = useMemo(() => {
     if (!allScored?.length) return null;
+    return rollupHours(allScored);
+  }, [allScored]);
+
+  const hourByTime = useMemo(() => {
+    if (!weatherNormalizedHours?.length) return new Map();
+    return new Map(weatherNormalizedHours.map((h) => [h.time, h]));
+  }, [weatherNormalizedHours]);
+
+  const priorDayComparisonLabel = useMemo(() => {
+    if (viewedDayOffset === 0) return "Yesterday";
+    if (viewedDayOffset === 1) return "Today";
+    return "2 days ago";
+  }, [viewedDayOffset]);
+
+  const readoutCache = useMemo(() => {
+    if (!allScored?.length || !weatherTimezone) return null;
+    const priorPrefix = calendarDatePrefixInTimeZone(weatherTimezone, viewedDayOffset - 1);
     const m = new Map();
     for (const row of allScored) {
       const offenders = topBreakdownContributors(row.breakdown, 2);
       const offenderById = new Map(offenders.map((item) => [item.id, item]));
-      m.set(row.time, hourReadoutEntries(row, flags, { offenderById }));
+      const yKey = sameClockHourOnDatePrefix(row.time, priorPrefix);
+      const yRow = yKey ? hourByTime.get(yKey) : null;
+      const compareYesterday = new Map();
+      if (yRow) {
+        for (const id of Object.keys(flags)) {
+          if (!flags[id]) continue;
+          const line = yesterdayComparisonLine(id, row, yRow, priorDayComparisonLabel);
+          if (line) compareYesterday.set(id, line);
+        }
+      }
+      m.set(row.time, hourReadoutEntries(row, flags, { offenderById, compareYesterday }));
     }
     return m;
-  }, [allScored, flags]);
+  }, [allScored, flags, hourByTime, weatherTimezone, viewedDayOffset, priorDayComparisonLabel]);
+
+  useEffect(() => {
+    if (!allScored?.length) {
+      setSelectedHourTime(null);
+      return;
+    }
+    setSelectedHourTime((prev) => {
+      if (prev && viewedDatePrefix) {
+        const mapped = sameClockHourOnDatePrefix(prev, viewedDatePrefix);
+        if (mapped && allScored.some((h) => h.time === mapped)) return mapped;
+      }
+      if (viewedDayOffset === 0 && weatherTimezone) {
+        const nowPrefix = currentHourPrefixInTimeZone(weatherTimezone);
+        const hit = allScored.find((h) => h.time === nowPrefix);
+        if (hit) return hit.time;
+      }
+      return allScored[0].time;
+    });
+  }, [allScored, viewedDatePrefix, viewedDayOffset, weatherTimezone]);
+
+  const yesterdayPrefix = useMemo(() => {
+    if (!weatherTimezone) return null;
+    return calendarDatePrefixInTimeZone(weatherTimezone, -1);
+  }, [weatherTimezone]);
+
+  const tomorrowPrefix = useMemo(() => {
+    if (!weatherTimezone) return null;
+    return calendarDatePrefixInTimeZone(weatherTimezone, 1);
+  }, [weatherTimezone]);
+
+  const hasYesterdayHours = useMemo(() => {
+    if (!yesterdayPrefix || !weatherNormalizedHours?.length) return false;
+    return weatherNormalizedHours.some((h) => h.time.startsWith(yesterdayPrefix));
+  }, [yesterdayPrefix, weatherNormalizedHours]);
+
+  const hasTomorrowHours = useMemo(() => {
+    if (!tomorrowPrefix || !weatherNormalizedHours?.length) return false;
+    return weatherNormalizedHours.some((h) => h.time.startsWith(tomorrowPrefix));
+  }, [tomorrowPrefix, weatherNormalizedHours]);
+
+  const currentHour = useMemo(() => {
+    if (viewedDayOffset !== 0 || !allScored?.length || !weatherTimezone) return null;
+    const nowPrefix = currentHourPrefixInTimeZone(weatherTimezone);
+    return allScored.find((h) => h.time === nowPrefix) ?? null;
+  }, [viewedDayOffset, allScored, weatherTimezone]);
+
+  const viewedDayShortLabel = useMemo(() => {
+    if (!viewedDatePrefix) return "";
+    const parts = viewedDatePrefix.split("-").map(Number);
+    const y = parts[0];
+    const mo = parts[1];
+    const d = parts[2];
+    if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return viewedDatePrefix;
+    const dt = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
+    try {
+      return dt.toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      });
+    } catch {
+      return viewedDatePrefix;
+    }
+  }, [viewedDatePrefix]);
 
   const canLoad = hasAnyParamEnabled(flags);
   const selectedHour = useMemo(() => {
@@ -227,17 +329,60 @@ export default function Home() {
         <Button
           onPress={load}
           disabled={loading || !canLoad}
-          accessibilityLabel={loading ? "Loading today's impact" : "Load today's impact"}
+          accessibilityLabel={loading ? "Loading readout" : "Load readout"}
         >
-          {loading ? "Loading\u2026" : "Load today"}
+          {loading ? "Loading\u2026" : "Load readout"}
         </Button>
       </Animated.View>
+
+      {weatherNormalizedHours && !error ? (
+        <Animated.View entering={FadeInDown.duration(400).delay(40)} style={styles.dayNav}>
+          <Text style={styles.dayNavLabel}>Day</Text>
+          <Pressable
+            onPress={() => setViewedDayOffset(-1)}
+            disabled={!hasYesterdayHours}
+            style={[styles.dayNavBtn, viewedDayOffset === -1 && styles.dayNavBtnActive, !hasYesterdayHours && styles.dayNavBtnDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel="View yesterday"
+          >
+            <Text style={[styles.dayNavBtnText, viewedDayOffset === -1 && styles.dayNavBtnTextActive]}>Yesterday</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setViewedDayOffset(0)}
+            style={[styles.dayNavBtn, viewedDayOffset === 0 && styles.dayNavBtnActive]}
+            accessibilityRole="button"
+            accessibilityLabel="View today"
+          >
+            <Text style={[styles.dayNavBtnText, viewedDayOffset === 0 && styles.dayNavBtnTextActive]}>Today</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setViewedDayOffset(1)}
+            disabled={!hasTomorrowHours}
+            style={[styles.dayNavBtn, viewedDayOffset === 1 && styles.dayNavBtnActive, !hasTomorrowHours && styles.dayNavBtnDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel="View tomorrow"
+          >
+            <Text style={[styles.dayNavBtnText, viewedDayOffset === 1 && styles.dayNavBtnTextActive]}>Tomorrow</Text>
+          </Pressable>
+          {viewedDatePrefix ? (
+            <Text style={styles.dayNavDate}>
+              {viewedDayShortLabel} · {viewedDatePrefix}
+            </Text>
+          ) : null}
+        </Animated.View>
+      ) : null}
+
+      {weatherNormalizedHours && !error && !allScored?.length ? (
+        <Text style={styles.emptyDayText}>
+          No hourly readings for this day in the loaded window. Try another day or refresh.
+        </Text>
+      ) : null}
 
       {!canLoad && (
         <Animated.View entering={FadeInDown.duration(400).delay(100)} style={styles.emptyNotice}>
           <Text style={styles.emptyNoticeText}>
             Nothing is included yet. Choose what outside means for you in Settings,
-            set how strongly each factor counts, then load today's hours.
+            set how strongly each factor counts, then load today\u2019s hours.
           </Text>
           <Button
             variant="outline"
@@ -257,7 +402,7 @@ export default function Home() {
         </View>
       )}
 
-      {loading && !rollup && (
+      {loading && !weatherNormalizedHours && (
         <View style={styles.loadingBox}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
@@ -271,7 +416,9 @@ export default function Home() {
             subtitle={currentHour ? nowImpactSummary(currentHour.score) : null}
             reasons={currentHour?.reasons}
           >
-            No matching current-hour reading yet. Load today to evaluate immediate outside impact.
+            {viewedDayOffset === 0
+              ? "No matching current-hour reading yet. Refresh the readout to evaluate immediate outside impact."
+              : "Live \u201cright now\u201d impact is for today only. Use Today above to jump back."}
           </ImpactCard>
           <DayImpactCard rollup={rollup} />
         </Animated.View>
@@ -286,7 +433,7 @@ export default function Home() {
             accessibilityLabel={showDayBreakdown ? "Hide day breakdown" : "Show day breakdown"}
           >
             <Text style={styles.breakdownToggleText}>
-              {showDayBreakdown ? "Hide day breakdown" : "Why today looks this way"}
+              {showDayBreakdown ? "Hide day breakdown" : "Why this day looks this way"}
             </Text>
           </Pressable>
           {showDayBreakdown ? <BreakdownSection rollup={rollup} /> : null}
@@ -295,9 +442,11 @@ export default function Home() {
 
       {allScored?.length > 0 && (
         <Animated.View entering={FadeInDown.duration(500).delay(300)}>
-          <Text style={styles.logTitle}>Hourly timeline</Text>
+          <Text style={styles.logTitle}>
+            Hourly timeline{viewedDayShortLabel ? ` · ${viewedDayShortLabel}` : ""}
+          </Text>
           <Text style={styles.logDescription}>
-            Pick an hour first. Scroll sideways; each column is one hour. Darker fills mean stronger outside pressure. Values show in °F; trend thresholds use °C steps internally, then your sensitivity weights apply.
+            Pick an hour first. Scroll sideways; each column is one hour. Darker fills mean stronger outside pressure. Values show in °F; trend thresholds use °C steps internally, then your sensitivity weights apply. Open details to compare the same clock hour to the prior calendar day when data is available.
           </Text>
           <DayStrip
             scored={allScored}
@@ -336,12 +485,13 @@ export default function Home() {
         {renderHeader()}
         {visibleHours.map((item, index) => (
           <HourRow
-            key={item.time}
+            key={`${item.time}-${showAllHours}`}
             row={item}
             readoutEntries={readoutCache?.get(item.time) ?? []}
             isEven={index % 2 === 1}
             defaultExpanded={!showAllHours}
             hideSummaryTap={!showAllHours}
+            showYesterdayHint={Boolean(readoutCache?.get(item.time)?.some((e) => e.yesterdayLine))}
           />
         ))}
       </ScrollView>
@@ -359,7 +509,7 @@ function BreakdownSection({ rollup }) {
 
       <View style={breakdownStyles.content}>
         <View style={breakdownStyles.driversSection}>
-          <Text style={breakdownStyles.sectionTitle}>TOP DRIVERS TODAY</Text>
+          <Text style={breakdownStyles.sectionTitle}>TOP DRIVERS THIS DAY</Text>
           {rollup.breakdown?.items?.length > 0 ? (
             <View style={breakdownStyles.driverList}>
               {rollup.breakdown.items.slice(0, 5).map((item) => (
@@ -504,6 +654,60 @@ const styles = StyleSheet.create({
   loadingBox: {
     paddingVertical: 40,
     alignItems: "center",
+  },
+  dayNav: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  dayNavLabel: {
+    fontFamily: fontFamilies.sans,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    color: colors.mutedForeground,
+    textTransform: "uppercase",
+  },
+  dayNavBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.background,
+  },
+  dayNavBtnActive: {
+    borderColor: colors.foreground,
+    backgroundColor: colors.foreground,
+  },
+  dayNavBtnDisabled: {
+    opacity: 0.4,
+  },
+  dayNavBtnText: {
+    fontFamily: fontFamilies.sans,
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.foreground,
+  },
+  dayNavBtnTextActive: {
+    color: colors.background,
+  },
+  dayNavDate: {
+    fontFamily: fontFamilies.data,
+    fontSize: 11,
+    color: colors.mutedForeground,
+    flexBasis: "100%",
+    marginTop: 4,
+  },
+  emptyDayText: {
+    fontFamily: fontFamilies.sans,
+    fontSize: 13,
+    color: colors.mutedForeground,
+    marginTop: 4,
   },
   cardsSection: {
     gap: 14,
