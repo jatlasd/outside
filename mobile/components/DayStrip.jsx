@@ -13,6 +13,7 @@ export function DayStrip({ scored, selectedTime, onSelect }) {
   const scrollRef = useRef(null);
   const viewportWRef = useRef(0);
   const batchKeyRef = useRef(null);
+  const lastCenteredTimeRef = useRef(null);
   const pendingCenterRef = useRef(false);
 
   const scrollSelectedToCenter = useCallback(() => {
@@ -29,13 +30,16 @@ export function DayStrip({ scored, selectedTime, onSelect }) {
     const maxScroll = Math.max(0, contentWidth - vw);
     scrollRef.current?.scrollTo({ x: Math.max(0, Math.min(x, maxScroll)), animated: false });
     pendingCenterRef.current = false;
+    lastCenteredTimeRef.current = selectedTime;
   }, [scored, selectedTime]);
 
   useLayoutEffect(() => {
     if (!scored?.length || !selectedTime) return;
     const batchKey = scored.map((r) => r.time).join("|");
-    if (batchKeyRef.current === batchKey) return;
-    batchKeyRef.current = batchKey;
+    const batchChanged = batchKeyRef.current !== batchKey;
+    const selectionChanged = lastCenteredTimeRef.current !== selectedTime;
+    if (!batchChanged && !selectionChanged) return;
+    if (batchChanged) batchKeyRef.current = batchKey;
     pendingCenterRef.current = true;
     scrollSelectedToCenter();
   }, [scored, selectedTime, scrollSelectedToCenter]);
