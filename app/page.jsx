@@ -93,12 +93,16 @@ function prioritizedEntries(entries, count) {
 function DayStrip({ scored, selectedTime, onSelect }) {
   const scrollRef = useRef(null)
   const batchKeyRef = useRef(null)
+  const lastCenteredTimeRef = useRef(null)
 
   useLayoutEffect(() => {
     if (!scored?.length || !selectedTime) return
     const batchKey = scored.map((r) => r.time).join("|")
-    if (batchKeyRef.current === batchKey) return
-    batchKeyRef.current = batchKey
+    const batchChanged = batchKeyRef.current !== batchKey
+    const selectionChanged = lastCenteredTimeRef.current !== selectedTime
+    if (!batchChanged && !selectionChanged) return
+    if (batchChanged) batchKeyRef.current = batchKey
+    lastCenteredTimeRef.current = selectedTime
     const root = scrollRef.current
     const el = root?.querySelector?.(`[data-hour="${CSS.escape(selectedTime)}"]`)
     el?.scrollIntoView({ inline: "center", block: "nearest" })
